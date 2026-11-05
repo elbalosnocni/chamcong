@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html><head><base target="_top"><?!= include('Styles'); ?></head>
+<body>
+<div id="login" class="login-wrap">
+  <div class="login-card">
+    <div class="brand-mark">GPS</div><h1>CHẤM CÔNG</h1><p class="muted">Đăng nhập bằng mã nhân viên</p>
+    <input id="employeeCode" autocomplete="username" placeholder="Nhập mã nhân viên" maxlength="40">
+    <button class="primary full" onclick="login()">ĐĂNG NHẬP</button>
+    <div id="loginError" class="error"></div>
+  </div>
+</div>
+<div id="app" class="hidden">
+  <header><div><b>CHẤM CÔNG GPS</b><small id="who"></small></div><button class="ghost" onclick="logout()">Đăng xuất</button></header>
+  <main>
+    <section class="panel">
+      <div class="row between"><div><div class="eyebrow">XIN CHÀO</div><h2 id="employeeName">Nhân viên</h2><div id="employeeDept" class="muted"></div></div><div class="clock" id="clock">--:--:--</div></div>
+      <div class="status" id="shiftStatus">Đang tải trạng thái...</div>
+      <label>Địa điểm làm việc</label><select id="locationSelect"></select>
+      <div class="gpsline"><span id="gpsStatus">Chưa xác nhận vị trí</span><button class="secondary" onclick="getGPS()">LẤY GPS</button></div>
+      <div class="gps-meta" id="gpsMeta"></div>
+      <div class="camera-box">
+        <video id="video" autoplay playsinline class="hidden"></video>
+        <canvas id="canvas" class="hidden"></canvas>
+        <div id="cameraPlaceholder"><div class="camera-icon">◎</div><b>Ảnh selfie xác nhận</b><small>Chụp trực tiếp bằng camera trước</small></div>
+        <img id="preview" class="hidden" alt="Ảnh selfie đã chụp">
+      </div>
+      <div class="row gap"><button class="secondary flex" onclick="startCamera()">MỞ CAMERA</button><button class="secondary flex" onclick="takePhoto()">CHỤP SELFIE</button></div>
+      <div class="row gap action-row"><button id="inBtn" class="success flex" onclick="submitAttendance('VÀO')">CHẤM VÀO</button><button id="outBtn" class="danger flex" onclick="submitAttendance('RA')">CHẤM RA</button></div>
+      <div id="message" class="message"></div>
+    </section>
+    <section id="adminPanel" class="panel hidden">
+      <h2>Quản trị hệ thống</h2>
+      <div class="tabs"><button onclick="showAdminTab('employees')">Nhân viên</button><button onclick="showAdminTab('locations')">Địa điểm</button><button onclick="showAdminTab('reports')">Báo cáo</button></div>
+      <div id="adminContent"></div>
+    </section>
+  </main>
+  <footer>Dữ liệu được ghi nhận bằng thời gian máy chủ. Vui lòng bật GPS và cho phép camera.</footer>
+</div>
+<script><?!= include('App'); ?></script>
+</body></html>
