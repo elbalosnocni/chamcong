@@ -1,5 +1,5 @@
 // Điền URL Worker sau khi deploy: https://<worker>.<subdomain>.workers.dev
-const API_URL = "YOUR_CLOUDFLARE_WORKER_URL";
+const API_URL = "https://chamcong.wuzhanggong.workers.dev/";
 const $ = (id) => document.getElementById(id);
 let employee = null, stream = null, photoData = "";
 
