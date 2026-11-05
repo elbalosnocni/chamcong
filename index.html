@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#123b32">
+  <title>Chấm công GPS</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="top">
+      <div class="mark">GPS</div>
+      <div><h1>Chấm công nhân viên</h1><p>Định vị • Xác thực ảnh • Ghi nhận thời gian</p></div>
+    </header>
+
+    <section id="loginPanel" class="panel">
+      <h2>Đăng nhập</h2>
+      <label for="employeeCode">Mã nhân viên</label>
+      <input id="employeeCode" autocomplete="username" placeholder="Ví dụ: NV001">
+      <button id="loginBtn" class="primary">Tiếp tục</button>
+      <p class="muted small">Đăng nhập bằng mã nhân viên theo cấu hình hiện tại.</p>
+    </section>
+
+    <section id="attendancePanel" class="panel hidden">
+      <div class="userline">
+        <div><span class="muted small">Xin chào</span><h2 id="employeeName">Nhân viên</h2><p id="employeeMeta" class="muted small"></p></div>
+        <button id="logoutBtn" class="ghost">Đăng xuất</button>
+      </div>
+      <div class="status" id="lastStatus">Đang tải trạng thái...</div>
+
+      <label for="locationSelect">Địa điểm chấm công</label>
+      <select id="locationSelect"></select>
+
+      <div class="actions">
+        <button id="inBtn" class="primary">CHẤM VÀO</button>
+        <button id="outBtn" class="secondary">CHẤM RA</button>
+      </div>
+
+      <div class="camera-wrap">
+        <video id="camera" autoplay playsinline muted></video>
+        <canvas id="snapshot" class="hidden"></canvas>
+        <div id="cameraPlaceholder" class="camera-placeholder">Camera trước sẽ hiển thị tại đây</div>
+      </div>
+      <div class="camera-actions">
+        <button id="cameraBtn" class="ghost">Bật camera trước</button>
+        <button id="retakeBtn" class="ghost" disabled>Chụp lại ảnh</button>
+      </div>
+      <img id="preview" class="preview hidden" alt="Ảnh selfie chấm công">
+
+      <div class="notice">
+        Cho phép truy cập camera và vị trí. Chỉ có thể chấm công khi ở trong bán kính được quản trị viên cấu hình.
+      </div>
+      <div id="message" class="message" role="status"></div>
+    </section>
+
+    <section id="adminPanel" class="panel hidden">
+      <h2>Quản trị</h2>
+      <div class="admin-grid">
+        <div>
+          <h3>Thêm địa điểm</h3>
+          <label>Tên địa điểm</label><input id="locName" placeholder="Chi nhánh A">
+          <label>Vĩ độ</label><input id="locLat" inputmode="decimal" placeholder="10.9800">
+          <label>Kinh độ</label><input id="locLng" inputmode="decimal" placeholder="106.6500">
+          <label>Bán kính (m)</label><input id="locRadius" type="number" min="10" value="100">
+          <button id="saveLocBtn" class="primary">Lưu địa điểm</button>
+        </div>
+        <div>
+          <h3>Thêm nhân viên</h3>
+          <label>Mã nhân viên</label><input id="newEmpCode" placeholder="NV002">
+          <label>Họ tên</label><input id="newEmpName" placeholder="Nguyễn Văn A">
+          <label>Bộ phận</label><input id="newEmpDept" placeholder="Kế toán">
+          <label>Vai trò</label>
+          <select id="newEmpRole"><option value="EMPLOYEE">Nhân viên</option><option value="ADMIN">Admin</option></select>
+          <button id="saveEmpBtn" class="primary">Lưu nhân viên</button>
+        </div>
+      </div>
+      <h3>Báo cáo chấm công</h3>
+      <div class="report-tools"><input id="reportMonth" type="month"><button id="reportBtn" class="secondary">Tải báo cáo CSV</button></div>
+      <p class="muted small">Admin được xác định bằng vai trò ADMIN trong trang tính Employees.</p>
+    </section>
+    <footer>Hệ thống chấm công GPS • Bản GitHub Pages + Cloudflare Worker + Google Apps Script</footer>
+  </main>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
