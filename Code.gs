@@ -1,149 +1,519 @@
 /**
- * Chấm công GPS - backend Google Apps Script.
- * Sheet ID đã được điền theo thông tin người dùng cung cấp.
- * Bảo mật: đặt Script Property WORKER_SECRET trùng với secret của Cloudflare Worker.
+ * Hệ thống điểm danh nhân viên bằng QR + selfie nâng cấp hệ thống Admin Dashboard
+ * Công Ty Cổ Phần Liwayway VN
  */
-const CONFIG = {
-  SPREADSHEET_ID: "1R__aaKBJhbgISjq-uMRqg5G-AOQ1VKIUpNg76h2H-uE",
-  PHOTO_FOLDER_NAME: "ChamCongGPS_Photos",
-  DEFAULT_RADIUS_METERS: 100,
-  MAX_PHOTO_BYTES: 4 * 1024 * 1024,
-  MAX_GPS_ACCURACY_METERS: 150
-};
-const SHEETS = {
-  Employees: ["Code","Name","Department","Role","Active"],
-  Locations: ["ID","Name","Latitude","Longitude","RadiusMeters","Active"],
-  Attendance: ["Timestamp","EmployeeCode","EmployeeName","Department","Type","LocationID","LocationName","Latitude","Longitude","AccuracyMeters","PhotoURL"]
+
+var TZ = 'Asia/Ho_Chi_Minh';
+var SHEET_LOG = 'ChamCong';        // Sheet chấm công, mỗi ca một dòng
+var SHEET_STAFF = 'NhanVien';      // Sheet danh sách nhân viên
+var FOLDER_NAME = 'DiemDanh_Anh';  // Thư mục Drive chứa ảnh selfie
+var STALE_SECONDS = 180;           // Ảnh chụp cũ hơn mức này bị gắn cờ
+var MIN_GAP_SECONDS = 60;          // Chặn bấm gửi trùng trong khoảng này
+var MAX_SHIFT_HOURS = 16;          // Ca dài tối đa
+var BREAK_MINUTES = 0;             // Phút nghỉ trừ khỏi mỗi ca
+var SHIFT_START_TIME = '08:00';
+
+// Chỉ số cột cấu hình (Bắt đầu từ 1)
+var C = { DATE: 1, CODE: 2, NAME: 3, IN: 4, OUT: 5, HOURS: 6, PHOTO_IN: 7, PHOTO_OUT: 8, WARN: 9, DEV_IN: 10, DEV_OUT: 11, LAT: 12, LNG: 13, ACCURACY: 14, DISTANCE: 15 };
+var HEADERS = ['Ngày', 'Mã NV', 'Họ tên', 'Giờ vào', 'Giờ ra', 'Số giờ', 'Ảnh vào', 'Ảnh ra', 'Cảnh báo', 'Thiết bị vào', 'Thiết bị ra', 'Vĩ độ', 'Kinh độ', 'Sai số GPS (m)', 'Khoảng cách (m)'];
+
+// Cấu hình tài khoản đăng nhập Admin Dashboard
+const ADMIN_CONFIG = {
+  username: "admin",
+  password: "Admin123" // Hãy chủ động thay đổi mật khẩu an toàn hơn tại đây
 };
 
-function setupSystem() {
-  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-  Object.keys(SHEETS).forEach(name => {
-    let sh = ss.getSheetByName(name);
-    if (!sh) sh = ss.insertSheet(name);
-    if (sh.getLastRow() === 0) sh.appendRow(SHEETS[name]);
-    sh.setFrozenRows(1);
-  });
-  const props = PropertiesService.getScriptProperties();
-  if (!props.getProperty("PHOTO_FOLDER_ID")) {
-    const folder = DriveApp.createFolder(CONFIG.PHOTO_FOLDER_NAME);
-    props.setProperty("PHOTO_FOLDER_ID", folder.getId());
-  }
-  Logger.log("Setup hoàn tất. Sheet: " + ss.getUrl());
+
+/**
+ * Backend API cho GitHub Pages. Không còn phục vụ giao diện bằng HtmlService.
+ * GET dùng JSONP; POST nhận form-urlencoded và trả callback qua iframe.
+ */
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  var action = String(p.action || '');
+  var callback = String(p.callback || 'callback').replace(/[^\w.$]/g, '');
+  var result;
+  try {
+    if (action === 'getName') result = getName(p.code);
+    else if (action === 'getPublicConfig') result = getPublicConfig();
+    else if (action === 'getPhoto') result = getPhoto(p.token, p.fileId);
+    else if (action === 'health') result = {ok:true, service:'attendance-api'};
+    else result = {success:false, message:'API action không hợp lệ.'};
+  } catch (err) { result = {success:false, message:String(err)}; }
+  return ContentService.createTextOutput(callback + '(' + JSON.stringify(result) + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
-function doGet() {
-  return json_({ok:true,service:"ChamCongGPS API",version:"2.0"});
-}
 function doPost(e) {
+  var payload = {};
   try {
-    const body = JSON.parse((e && e.postData && e.postData.contents) || "{}");
-    const expected = PropertiesService.getScriptProperties().getProperty("WORKER_SECRET");
-    if (!expected || body._workerSecret !== expected) return json_({ok:false,error:"Unauthorized"});
-    const result = route_(body);
-    return json_({ok:true,...result});
+    payload = JSON.parse((e && e.parameter && e.parameter.payload) || '{}');
+    var action = String(payload.action || '');
+    var d = payload.data || {};
+    var result;
+    if (action === 'checkAdminLogin') result = checkAdminLogin(d.username, d.password);
+    else if (action === 'logoutAdmin') result = logoutAdmin(d.token);
+    else if (action === 'getAdminDashboardData') result = getAdminDashboardData(d.token, d.date);
+    else if (action === 'submitCheckin') result = submitCheckin(d);
+    else if (action === 'saveGeofence') result = saveGeofence(d.token, d.lat, d.lng, d.radius);
+    else result = {success:false, ok:false, message:'API action không hợp lệ.'};
+    return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><script>parent.postMessage({type:"DD_API_RESULT",nonce:' +
+      JSON.stringify(String(payload.nonce || '')) + ',result:' + JSON.stringify(result).replace(/</g,'\\\\u003c') +
+      '}, "*");</script>').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (err) {
-    return json_({ok:false,error:err && err.message ? err.message : String(err)});
+    return HtmlService.createHtmlOutput('<!doctype html><script>parent.postMessage({type:"DD_API_RESULT",nonce:' +
+      JSON.stringify(String(payload.nonce || '')) + ',result:{success:false,ok:false,message:' +
+      JSON.stringify(String(err)).replace(/</g,'\\\\u003c') + '}}, "*");</script>').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 }
-function json_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
-}
-function ss_(){ return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID); }
-function sheet_(name){ const sh=ss_().getSheetByName(name); if(!sh) throw new Error("Thiếu sheet "+name+". Hãy chạy setupSystem()."); return sh; }
-function rows_(name){ const v=sheet_(name).getDataRange().getValues(); return v.length>1?v.slice(1):[]; }
-function route_(b) {
-  switch(b.action) {
-    case "login": return {employee: employee_(b.employeeCode)};
-    case "init": {
-      const emp=employee_(b.employeeCode);
-      const locations=rows_("Locations").filter(r=>truth_(r[5])).map(r=>({id:String(r[0]),name:String(r[1]),lat:Number(r[2]),lng:Number(r[3]),radius:Number(r[4])||CONFIG.DEFAULT_RADIUS_METERS}));
-      return {locations,lastEvent:lastEvent_(emp.code)};
-    }
-    case "attendance_submit": return submitAttendance_(b);
-    case "admin_save_location": admin_(b.employeeCode); return saveLocation_(b);
-    case "admin_save_employee": admin_(b.employeeCode); return saveEmployee_(b);
-    case "admin_report": admin_(b.employeeCode); return report_(b.month);
-    default: throw new Error("Hành động không hợp lệ.");
+
+/**
+ * Xác thực thông tin đăng nhập Admin
+ */
+function checkAdminLogin(username, password) {
+  if (String(username || '') === ADMIN_CONFIG.username && String(password || '') === ADMIN_CONFIG.password) {
+    var token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
+    CacheService.getScriptCache().put('admin:' + token, '1', 21600);
+    return { success: true, token: token };
   }
+  Utilities.sleep(500);
+  return { success: false, message: "Sai tài khoản hoặc mật khẩu!" };
 }
-function employee_(code) {
-  code=String(code||"").trim().toUpperCase();
-  if(!code) throw new Error("Nhập mã nhân viên.");
-  const r=rows_("Employees").find(x=>String(x[0]).trim().toUpperCase()===code && truth_(x[4]));
-  if(!r) throw new Error("Mã nhân viên không tồn tại hoặc đã khóa.");
-  return {code:String(r[0]),name:String(r[1]),department:String(r[2]||""),role:String(r[3]||"EMPLOYEE").toUpperCase()};
+function isAdminTokenValid_(token) {
+  return !!token && CacheService.getScriptCache().get('admin:' + String(token)) === '1';
 }
-function admin_(code){ if(employee_(code).role!=="ADMIN") throw new Error("Bạn không có quyền quản trị."); }
-function truth_(v){ return v===true || String(v).toUpperCase()==="TRUE" || String(v)==="1" || String(v).toUpperCase()==="ACTIVE"; }
-function lastEvent_(code) {
-  const a=rows_("Attendance").filter(r=>String(r[1]).toUpperCase()===String(code).toUpperCase());
-  if(!a.length) return null;
-  const r=a[a.length-1], d=(r[0] instanceof Date)?r[0]:new Date(r[0]);
-  return {type:String(r[4]),time:Utilities.formatDate(d,Session.getScriptTimeZone(),"dd/MM/yyyy HH:mm")};
+function logoutAdmin(token) {
+  if (token) CacheService.getScriptCache().remove('admin:' + String(token));
+  return { success: true };
 }
-function submitAttendance_(b) {
-  const lock=LockService.getScriptLock(); lock.waitLock(15000);
+
+/**
+ * API Lấy dữ liệu báo cáo tích hợp cho trang quản trị Admin
+ * Tối ưu hóa đọc mảng, phân tích trạng thái Vào/Ra/Vắng/Cảnh báo từ cấu trúc thực tế
+ */
+function getAdminDashboardData(token, targetDateStr) {
+  if (!isAdminTokenValid_(token)) return { success: false, message: "Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại." };
   try {
-    const emp=employee_(b.employeeCode), type=String(b.type||"").toUpperCase();
-    if(!["IN","OUT"].includes(type)) throw new Error("Loại chấm công không hợp lệ.");
-    const last=lastEvent_(emp.code);
-    if(type==="OUT" && (!last || last.type!=="IN")) throw new Error("Bạn chưa có lượt CHẤM VÀO hợp lệ. Vui lòng chấm vào trước.");
-    if(type==="IN" && last && last.type==="IN") throw new Error("Bạn đang có lượt CHẤM VÀO chưa kết thúc bằng CHẤM RA.");
-    const lat=Number(b.lat),lng=Number(b.lng),accuracy=Number(b.accuracy);
-    if(!isFinite(lat)||!isFinite(lng)||lat < -90||lat>90||lng < -180||lng>180) throw new Error("Tọa độ GPS không hợp lệ.");
-    if(!isFinite(accuracy)||accuracy>CONFIG.MAX_GPS_ACCURACY_METERS) throw new Error("GPS chưa đủ chính xác. Hãy thử lại ở nơi thoáng.");
-    const loc=rows_("Locations").find(r=>String(r[0])===String(b.locationId)&&truth_(r[5]));
-    if(!loc) throw new Error("Địa điểm không tồn tại hoặc đã ngừng hoạt động.");
-    const radius=Number(loc[4])||CONFIG.DEFAULT_RADIUS_METERS;
-    const distance=distanceMeters_(lat,lng,Number(loc[2]),Number(loc[3]));
-    if(distance>radius) throw new Error("Bạn đang ngoài vùng chấm công ("+Math.round(distance)+"m, giới hạn "+radius+"m).");
-    const photo=String(b.photoData||"");
-    const match=photo.match(/^data:image\/(jpeg|jpg|png);base64,(.+)$/);
-    if(!match) throw new Error("Ảnh selfie không hợp lệ.");
-    const bytes=Utilities.base64Decode(match[2]);
-    if(bytes.length>CONFIG.MAX_PHOTO_BYTES) throw new Error("Ảnh quá lớn. Vui lòng chụp lại.");
-    const folderId=PropertiesService.getScriptProperties().getProperty("PHOTO_FOLDER_ID");
-    if(!folderId) throw new Error("Chưa cấu hình thư mục ảnh. Chạy setupSystem().");
-    const blob=Utilities.newBlob(bytes,"image/jpeg",emp.code+"_"+type+"_"+Date.now()+".jpg");
-    const file=DriveApp.getFolderById(folderId).createFile(blob);
-    file.setSharing(DriveApp.Access.PRIVATE,DriveApp.Permission.VIEW);
-    const now=new Date();
-    sheet_("Attendance").appendRow([now,emp.code,emp.name,emp.department,type,String(loc[0]),String(loc[1]),lat,lng,accuracy,file.getUrl()]);
-    return {time:Utilities.formatDate(now,Session.getScriptTimeZone(),"dd/MM/yyyy HH:mm:ss"),distance:Math.round(distance)};
-  } finally { lock.releaseLock(); }
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetDD = getLogSheet_(); // Đồng bộ cả schema cũ sang cột GPS
+    const sheetNV = getStaffSheet_();
+    
+    // Đồng bộ xử lý ngày lọc (Định dạng YYYY-MM-DD từ input html)
+    let filterDateStr = targetDateStr;
+    if (!filterDateStr) {
+      filterDateStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd");
+    }
+    
+    // 1. Tải danh bạ toàn bộ nhân viên từ hệ thống để đối chiếu vắng mặt
+    let allEmployees = {};
+    if (sheetNV) {
+      let lastRowNV = sheetNV.getLastRow();
+      if (lastRowNV >= 2) {
+        let nvData = sheetNV.getRange(2, 1, lastRowNV - 1, 2).getValues();
+        nvData.forEach(r => {
+          let code = String(r[0]).trim().toUpperCase();
+          if (code) {
+            allEmployees[code] = { id: code, name: String(r[1]).trim(), dept: "Nhà máy Liwayway" };
+          }
+        });
+      }
+    }
+    
+    // 2. Phân tích lịch sử chấm công trong ngày được chọn
+    let records = [];
+    let checkedInCodes = new Set();
+    let countIn = 0;
+    let countOut = 0;
+    let countWarn = 0;
+    let countLate = 0; // Tổng số nhân viên đi trễ trong ngày được chọn
+    
+    if (sheetDD) {
+      let lastRowDD = sheetDD.getLastRow();
+      if (lastRowDD >= 2) {
+        let ddRange = sheetDD.getRange(2, 1, lastRowDD - 1, HEADERS.length);
+        let ddData = ddRange.getValues();
+        let ddFormulas = ddRange.getFormulas();
+        ddData.forEach((row, ddIndex) => {
+          let rowDateObj = row[C.DATE - 1];
+          if (!rowDateObj) return;
+          
+          let formattedRowDate = "";
+          if (rowDateObj instanceof Date && !isNaN(rowDateObj.getTime())) {
+            formattedRowDate = Utilities.formatDate(rowDateObj, TZ, "yyyy-MM-dd");
+          } else {
+            // Trường hợp ngày lưu dạng text chuỗi dd/mm/yyyy
+            let parts = String(rowDateObj).split('/');
+            if (parts.length === 3) {
+              formattedRowDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+          }
+          
+          // Lọc dữ liệu chuẩn khớp với ngày Admin đang truy vấn
+          if (formattedRowDate === filterDateStr) {
+            let code = String(row[C.CODE - 1]).toUpperCase().trim();
+            if (!code) return;
+            
+            checkedInCodes.add(code);
+            
+            let timeInStr = "--:--";
+            let timeOutStr = "--:--";
+            let photoInUrl = "";
+            let photoOutUrl = "";
+            
+            // Trích xuất link ảnh từ công thức HYPERLINK
+            if (row[C.IN - 1] instanceof Date) {
+              timeInStr = Utilities.formatDate(row[C.IN - 1], TZ, "HH:mm");
+              countIn++;
+            }
+            if (row[C.OUT - 1] instanceof Date) {
+              timeOutStr = Utilities.formatDate(row[C.OUT - 1], TZ, "HH:mm");
+              countOut++;
+            }
+            
+            // Phân tách lấy URL ảnh từ cấu trúc ô dữ liệu
+            photoInUrl = driveImageUrl_(ddFormulas[ddIndex][C.PHOTO_IN - 1] || row[C.PHOTO_IN - 1]);
+            photoOutUrl = driveImageUrl_(ddFormulas[ddIndex][C.PHOTO_OUT - 1] || row[C.PHOTO_OUT - 1]);
+            
+            let warningText = String(row[C.WARN - 1] || "").trim();
+            let status = "Đúng giờ";
+            if (row[C.IN - 1] instanceof Date) {
+              var timeParts = Utilities.formatDate(
+                row[C.IN - 1],
+                TZ,
+                "HH:mm"
+              ).split(':');
+
+              var actualMinutes =
+                Number(timeParts[0]) * 60 + Number(timeParts[1]);
+              var shiftParts = SHIFT_START_TIME.split(':');
+              var shiftMinutes = Number(shiftParts[0]) * 60 + Number(shiftParts[1]);
+              if (actualMinutes > shiftMinutes) { status = "Đi trễ"; countLate++; }
+            } else { status = "Thiếu giờ vào"; }
+            if (row[C.OUT - 1] instanceof Date) {
+              status += " · Đã ra ca";
+            } else if (row[C.IN - 1] instanceof Date) {
+              status += " · Đang trong ca";
+            }
+            if (warningText) {
+              countWarn++;
+              status += " (Có cảnh báo)";
+            }
+            
+            records.push({
+              id: code,
+              name: row[C.NAME - 1] || (allEmployees[code] ? allEmployees[code].name : ""),
+              dept: allEmployees[code] ? allEmployees[code].dept : "Nhân sự ngoài danh sách",
+              date: formattedRowDate,
+              timeIn: timeInStr,
+              timeOut: timeOutStr,
+              hours: row[C.HOURS - 1] ? Number(row[C.HOURS - 1]).toFixed(2) : "0.00",
+              photoIn: photoInUrl,
+              photoOut: photoOutUrl,
+              photoInId: driveFileId_(ddFormulas[ddIndex][C.PHOTO_IN - 1] || row[C.PHOTO_IN - 1]),
+              photoOutId: driveFileId_(ddFormulas[ddIndex][C.PHOTO_OUT - 1] || row[C.PHOTO_OUT - 1]),
+              warning: warningText,
+              lat: row[C.LAT-1] || null, lng: row[C.LNG-1] || null, accuracy: row[C.ACCURACY-1] || null, distance: row[C.DISTANCE-1] || null,
+              status: status
+            });
+          }
+        });
+      }
+    }
+    
+    // 3. Tự động tính toán các nhân sự vắng mặt dựa trên bảng danh sách nhân viên gốc
+    let totalStaff = Object.keys(allEmployees).length;
+    let absentCount = 0;
+    
+    Object.keys(allEmployees).forEach(code => {
+      if (!checkedInCodes.has(code)) {
+        absentCount++;
+        records.push({
+          id: code,
+          name: allEmployees[code].name,
+          dept: allEmployees[code].dept,
+          date: filterDateStr,
+          timeIn: "--:--",
+          timeOut: "--:--",
+          hours: "0.00",
+          photoIn: "",
+          photoOut: "",
+          warning: "",
+          status: "Vắng mặt"
+        });
+      }
+    });
+    
+    return {
+      success: true,
+      summary: {
+        totalEmployees: totalStaff || checkedInCodes.size,
+        totalCheckedIn: checkedInCodes.size,
+        totalInCa: Math.max(0, countIn - countOut),
+        totalLate: countLate,
+        totalAbsent: absentCount,
+        totalWarning: countWarn
+      },
+      detailRecords: records
+    };
+    
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
 }
-function saveLocation_(b) {
-  const name=String(b.name||"").trim(),lat=Number(b.lat),lng=Number(b.lng),radius=Number(b.radius);
-  if(!name||!isFinite(lat)||!isFinite(lng)||lat < -90||lat>90||lng < -180||lng>180) throw new Error("Thông tin địa điểm chưa hợp lệ.");
-  if(!isFinite(radius)||radius<10||radius>5000) throw new Error("Bán kính phải từ 10 đến 5000 mét.");
-  const id="LOC-"+Utilities.getUuid().slice(0,8).toUpperCase();
-  sheet_("Locations").appendRow([id,name,lat,lng,radius,true]);
-  return {locationId:id};
+
+/**
+ * Hàm bổ trợ bóc tách URL từ công thức ô tính của Google Sheet dạng `=HYPERLINK("url","text")`
+ */
+function parseDriveUrl_(cellValue) {
+  let valStr = String(cellValue || '').trim();
+  if (valStr.startsWith("=") || valStr.includes("HYPERLINK")) {
+    let match = valStr.match(/HYPERLINK\s*\(\s*"([^"]+)"/i);
+    if (match && match[1]) return match[1];
+  }
+  if (valStr.startsWith("http")) return valStr;
+  return "";
 }
-function saveEmployee_(b) {
-  const code=String(b.newCode||"").trim().toUpperCase(),name=String(b.name||"").trim();
-  if(!code||!name) throw new Error("Cần nhập mã và họ tên.");
-  if(rows_("Employees").some(r=>String(r[0]).toUpperCase()===code)) throw new Error("Mã nhân viên đã tồn tại.");
-  const role=String(b.role||"EMPLOYEE").toUpperCase()==="ADMIN"?"ADMIN":"EMPLOYEE";
-  sheet_("Employees").appendRow([code,name,String(b.department||""),role,true]);
-  return {employeeCode:code};
+function driveImageUrl_(cellValue) {
+  var url = parseDriveUrl_(cellValue);
+  if (!url) return '';
+  var idMatch = url.match(/(?:id=|\/d\/)([A-Za-z0-9_-]+)/);
+  return idMatch ? 'https://drive.google.com/thumbnail?id=' + idMatch[1] + '&sz=w1000' : url;
 }
-function report_(month) {
-  if(!/^\d{4}-\d{2}$/.test(String(month||""))) throw new Error("Chọn tháng báo cáo.");
-  const prefix=String(month);
-  const rows=rows_("Attendance").filter(r=>{
-    const d=(r[0] instanceof Date)?r[0]:new Date(r[0]);
-    return Utilities.formatDate(d,Session.getScriptTimeZone(),"yyyy-MM")===prefix;
-  }).map(r=>{
-    const d=(r[0] instanceof Date)?r[0]:new Date(r[0]);
-    return {time:Utilities.formatDate(d,Session.getScriptTimeZone(),"yyyy-MM-dd HH:mm:ss"),employeeCode:r[1],name:r[2],department:r[3],type:r[4],location:r[6],lat:r[7],lng:r[8],accuracy:r[9],photoUrl:r[10]};
-  });
-  return {rows};
+function driveFileId_(cellValue) {
+  var url=parseDriveUrl_(cellValue), m=url.match(/(?:id=|\/d\/)([A-Za-z0-9_-]+)/);
+  return m ? m[1] : '';
+}
+function getPhoto(token,fileId) {
+  if(!isAdminTokenValid_(token)) return {success:false,message:'Phiên đăng nhập hết hạn.'};
+  fileId=String(fileId||'');
+  if(!/^[A-Za-z0-9_-]{10,}$/.test(fileId)) return {success:false,message:'Mã ảnh không hợp lệ.'};
+  try {
+    var blob=DriveApp.getFileById(fileId).getBlob(), mime=blob.getContentType();
+    if(!/^image\/(jpeg|png|webp)$/.test(mime)) return {success:false,message:'Tệp không phải ảnh hợp lệ.'};
+    return {success:true,dataUrl:'data:'+mime+';base64,'+Utilities.base64Encode(blob.getBytes())};
+  } catch(err) { return {success:false,message:'Không đọc được ảnh. Kiểm tra quyền Drive.'}; }
+}
+
+
+function getGeofence_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CauHinh');
+  if (!sh) return {lat:null,lng:null,radius:150};
+  var values = sh.getRange(1,1,Math.max(1,sh.getLastRow()),2).getValues(), out={lat:null,lng:null,radius:150};
+  values.forEach(function(r){ if(r[0]==='GEOFENCE_LAT') out.lat=Number(r[1]); if(r[0]==='GEOFENCE_LNG') out.lng=Number(r[1]); if(r[0]==='GEOFENCE_RADIUS') out.radius=Number(r[1])||150; });
+  if (!isFinite(out.lat)) out.lat=null; if (!isFinite(out.lng)) out.lng=null;
+  return out;
+}
+function getPublicConfig(){ var g=getGeofence_(); return {success:true, geofence:{lat:g.lat,lng:g.lng,radius:g.radius,enabled:g.lat!==null&&g.lng!==null}}; }
+function saveGeofence(token,lat,lng,radius) {
+  if (!isAdminTokenValid_(token)) return {success:false,message:'Phiên đăng nhập hết hạn.'};
+  lat=Number(lat);lng=Number(lng);radius=Number(radius);
+  if(!isFinite(lat)||lat < -90||lat>90||!isFinite(lng)||lng < -180||lng>180||!isFinite(radius)||radius<20||radius>5000)
+    return {success:false,message:'Tọa độ hoặc bán kính không hợp lệ (20–5000 m).'};
+  var ss=SpreadsheetApp.getActiveSpreadsheet(),sh=ss.getSheetByName('CauHinh')||ss.insertSheet('CauHinh');
+  sh.clear();sh.getRange(1,1,3,2).setValues([['GEOFENCE_LAT',lat],['GEOFENCE_LNG',lng],['GEOFENCE_RADIUS',radius]]);
+  return {success:true,message:'Đã lưu vị trí và bán kính điểm danh.',geofence:{lat:lat,lng:lng,radius:radius,enabled:true}};
 }
 function distanceMeters_(lat1,lon1,lat2,lon2) {
-  const R=6371000,toRad=x=>x*Math.PI/180;
-  const dLat=toRad(lat2-lat1),dLon=toRad(lon2-lon1);
-  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  var R=6371000,rad=Math.PI/180,dLat=(lat2-lat1)*rad,dLon=(lon2-lon1)*rad;
+  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin(dLon/2)*Math.sin(dLon/2);
   return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+/** Chạy một lần từ trình soạn thảo để cấp quyền và tạo sẵn sheet, thư mục. */
+function setup() {
+  SpreadsheetApp.getActiveSpreadsheet().setSpreadsheetTimeZone(TZ);
+  getLogSheet_();
+  getStaffSheet_();
+  getFolder_();
+  return 'Đã sẵn sàng';
+}
+
+function getLogSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(SHEET_LOG);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_LOG);
+    sh.appendRow(HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
+    sh.getRange('A:A').setNumberFormat('dd/MM/yyyy');
+    sh.getRange('D:E').setNumberFormat('dd/MM/yyyy HH:mm:ss');
+    sh.getRange('F:F').setNumberFormat('0.00');
+    sh.setColumnWidth(C.NAME, 180);
+    sh.setColumnWidth(C.IN, 150);
+    sh.setColumnWidth(C.OUT, 150);
+    sh.setColumnWidth(C.WARN, 280);
+  }
+  if (sh.getLastColumn() < HEADERS.length) sh.getRange(1,1,1,HEADERS.length).setValues([HEADERS]);
+  return sh;
+}
+
+function getStaffSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(SHEET_STAFF);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_STAFF);
+    sh.appendRow(['Mã NV', 'Họ tên']);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, 2).setFontWeight('bold');
+  }
+  return sh;
+}
+
+function getFolder_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('FOLDER_ID');
+  if (id) {
+try { return DriveApp.getFolderById(id); } catch (err) { /* thư mục đã bị xoá, tạo lại */ }
+}
+var folder = DriveApp.createFolder(FOLDER_NAME);
+props.setProperty('FOLDER_ID', folder.getId());
+return folder;
+}
+/** Trả về bảng mã -> tên nếu sheet NhanVien có dữ liệu, ngược lại trả về null. */
+function staffMap_() {
+var sh = getStaffSheet_();
+var last = sh.getLastRow();
+if (last < 2) return null;
+var rows = sh.getRange(2, 1, last - 1, 2).getValues();
+var map = {};
+rows.forEach(function (r) {
+var code = String(r[0]).trim().toUpperCase();
+if (code) map[code] = String(r[1]).trim();
+});
+return Object.keys(map).length ? map : null;
+}
+/** Gọi từ trang để tự điền họ tên khi nhập mã. */
+function getName(code) {
+var map = staffMap_();
+if (!map) return { listed: false, name: '' };
+var key = String(code || '').trim().toUpperCase();
+return { listed: true, name: map[key] || '' };
+}
+function isDate_(v) { return v instanceof Date && !isNaN(v.getTime()); }
+function fmt_(d, f) { return Utilities.formatDate(d, TZ, f); }
+function hoursFormula_(row) {
+return '=IF(AND(ISNUMBER(D' + row + '),ISNUMBER(E' + row + ')),MAX(0,ROUND((E' + row + '-D' + row + ')*24-' + BREAK_MINUTES + '/60,2)),"")';
+}
+function addWarn_(sh, row, text) {
+var cell = sh.getRange(row, C.WARN);
+var old = String(cell.getValue() || '');
+cell.setValue(old ? old + '; ' + text : text);
+sh.getRange(row, 1, 1, HEADERS.length).setBackground('#fde8dc');
+}
+/** Nhận một lượt điểm danh từ trang. */
+function submitCheckin(data) {
+data = data || {};
+var code = String(data.code || '').trim().toUpperCase().slice(0, 30);
+var name = String(data.name || '').trim().slice(0, 80);
+var isOut = data.type === 'out';
+var device = String(data.device || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40);
+var age = Math.max(0, Math.min(Number(data.photoAgeSec) || 0, 31536000));
+var photo = String(data.photo || '');
+if (!code || !name) return { ok: false, message: 'Hãy nhập họ tên và mã nhân viên.' };
+var m = photo.match(/^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/);
+if (!m) return { ok: false, message: 'Chưa có ảnh selfie hợp lệ. Hãy chụp lại.' };
+if (m[1].length > 600000) return { ok: false, message: 'Ảnh quá lớn. Hãy chụp lại.' };
+var gps = data.location || {};
+var lat = Number(gps.lat), lng = Number(gps.lng), accuracy = Number(gps.accuracy);
+if (!isFinite(lat) || lat < -90 || lat > 90 || !isFinite(lng) || lng < -180 || lng > 180)
+  return {ok:false,message:'Không lấy được vị trí GPS. Hãy bật quyền vị trí và thử lại.'};
+if (!isFinite(accuracy) || accuracy <= 0 || accuracy > 100)
+  return {ok:false,message:'Độ chính xác GPS chưa đạt (cần sai số không quá 100 m). Hãy thử lại ngoài trời.'};
+var fence = getGeofence_();
+if (fence.lat === null || fence.lng === null)
+  return {ok:false,message:'Admin chưa cấu hình vị trí và bán kính điểm danh.'};
+var distance = Math.round(distanceMeters_(lat,lng,fence.lat,fence.lng));
+if (distance > fence.radius)
+  return {ok:false,message:'Bạn đang cách điểm danh ' + distance + ' m, vượt bán kính cho phép ' + fence.radius + ' m.'};
+
+var map = staffMap_();
+if (map) {
+if (!map[code]) return { ok: false, message: 'Mã nhân viên không có trong danh sách. Hãy kiểm tra lại mã.' };
+name = map[code];
+}
+var lock = LockService.getScriptLock();
+lock.waitLock(20000);
+try {
+var sh = getLogSheet_();
+var now = new Date();
+var nowTxt = fmt_(now, 'HH:mm:ss');
+var today = fmt_(now, 'dd/MM/yyyy');
+var last = sh.getLastRow();
+var start = Math.max(2, last - 599);
+var rows = last >= 2 ? sh.getRange(start, 1, last - start + 1, HEADERS.length).getValues() : [];
+var idx = -1;
+for (var i = rows.length - 1; i >= 0; i--) {
+if (String(rows[i][C.CODE - 1]).toUpperCase() === code) { idx = i; break; }
+}
+var prev = idx >= 0 ? rows[idx] : null;
+var prevRow = idx >= 0 ? start + idx : 0;
+var prevIn = prev && isDate_(prev[C.IN - 1]) ? prev[C.IN - 1] : null;
+var prevOut = prev && isDate_(prev[C.OUT - 1]) ? prev[C.OUT - 1] : null;
+var open = !!prevIn && !prevOut;
+var openHours = open ? (now - prevIn) / 3600000 : 0;
+var lastEvent = prevOut || prevIn;
+if (lastEvent && (now - lastEvent) / 1000 < MIN_GAP_SECONDS) {
+return { ok: false, message: 'Bạn vừa điểm danh xong. Vui lòng đợi ' + MIN_GAP_SECONDS + ' giây nếu cần gửi lại.' };
+}
+if (!isOut && open && openHours < MAX_SHIFT_HOURS) {
+return { ok: false, message: 'Bạn đã vào ca lúc ' + fmt_(prevIn, 'HH:mm') + ' ngày ' + fmt_(prevIn, 'dd/MM') + ' và chưa ra ca. Muốn kết thúc ca thì chọn "Ra ca".' };
+}
+if (isOut && !open && prevIn && prevOut && (now - prevOut) / 3600000 < 2) {
+return { ok: false, message: 'Bạn đã ra ca lúc ' + fmt_(prevOut, 'HH:mm') + '. Không cần điểm danh ra ca lần nữa.' };
+}
+var warns = [];
+if (age > STALE_SECONDS) warns.push((isOut ? 'Ảnh ra' : 'Ảnh vào') + ' cũ ' + Math.round(age / 60) + ' phút');
+if (device) {
+var others = {};
+rows.forEach(function (r) {
+var d = isDate_(r[C.DATE - 1]) ? fmt_(r[C.DATE - 1], 'dd/MM/yyyy') : String(r[C.DATE - 1]);
+var rc = String(r[C.CODE - 1]).toUpperCase();
+if (d === today && rc !== code && (r[C.DEV_IN - 1] === device || r[C.DEV_OUT - 1] === device)) others[rc] = true;
+});
+var n = Object.keys(others).length;
+if (n > 0) warns.push('Thiết bị này đã điểm danh cho ' + n + ' mã khác hôm nay');
+}
+var fileName = fmt_(now, 'yyyyMMdd_HHmmss') + '' + code + '' + (isOut ? 'ra' : 'vao') + '.jpg';
+var blob = Utilities.newBlob(Utilities.base64Decode(m[1]), 'image/jpeg', fileName);
+var url = getFolder_().createFile(blob).getUrl();
+var link = '=HYPERLINK("' + url + '","Xem ảnh")';
+if (!isOut) {
+if (open && openHours >= MAX_SHIFT_HOURS) addWarn_(sh, prevRow, 'Quên điểm danh ra ca');
+sh.appendRow([now, code, name, now, '', '', '', '', warns.join('; '), device, '', lat, lng, accuracy, distance]);
+var row = sh.getLastRow();
+sh.getRange(row, C.DATE).setNumberFormat('dd/MM/yyyy');
+sh.getRange(row, C.IN).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+sh.getRange(row, C.OUT).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+sh.getRange(row, C.HOURS).setFormula(hoursFormula_(row)).setNumberFormat('0.00');
+sh.getRange(row, C.PHOTO_IN).setFormula(link);
+if (warns.length) sh.getRange(row, 1, 1, HEADERS.length).setBackground('#fde8dc');
+return { ok: true, name: name, message: 'Đã vào ca lúc ' + nowTxt + ' ngày ' + today + '.' };
+}
+if (open && openHours <= MAX_SHIFT_HOURS) {
+sh.getRange(prevRow, C.OUT).setValue(now).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+sh.getRange(prevRow, C.PHOTO_OUT).setFormula(link);
+sh.getRange(prevRow, C.DEV_OUT).setValue(device);
+sh.getRange(prevRow, C.LAT, 1, 4).setValues([[lat,lng,accuracy,distance]]);
+sh.getRange(prevRow, C.HOURS).setFormula(hoursFormula_(prevRow)).setNumberFormat('0.00');
+warns.forEach(function (w) { addWarn_(sh, prevRow, w); });
+var worked = Math.max(0, openHours - BREAK_MINUTES / 60);
+var hh = Math.floor(worked), mm = Math.round((worked - hh) * 60);
+if (mm === 60) { hh += 1; mm = 0; }
+return { ok: true, name: name, message: 'Đã ra ca lúc ' + nowTxt + '. Hôm nay bạn làm ' + hh + ' giờ ' + mm + ' phút.' };
+}
+if (open && openHours > MAX_SHIFT_HOURS) addWarn_(sh, prevRow, 'Quên điểm danh ra ca');
+warns.unshift('Thiếu giờ vào');
+sh.appendRow([now, code, name, '', now, '', '', '', warns.join('; '), '', device, lat, lng, accuracy, distance]);
+var r2 = sh.getLastRow();
+sh.getRange(r2, C.DATE).setNumberFormat('dd/MM/yyyy');
+sh.getRange(r2, C.IN).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+sh.getRange(r2, C.OUT).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+sh.getRange(r2, C.HOURS).setFormula(hoursFormula_(r2)).setNumberFormat('0.00');
+sh.getRange(r2, C.PHOTO_OUT).setFormula(link);
+sh.getRange(r2, 1, 1, HEADERS.length).setBackground('#fde8dc');
+return { ok: true, name: name, message: 'Đã ghi giờ ra lúc ' + nowTxt + '. Hệ thống không thấy giờ vào của bạn nên quản lý sẽ kiểm tra.' };
+} finally {
+lock.releaseLock();
+}
 }

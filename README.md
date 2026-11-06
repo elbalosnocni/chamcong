@@ -1,74 +1,68 @@
-# Chấm công GPS v2 — GitHub Pages + Cloudflare Worker + Google Apps Script
+# Hệ thống điểm danh QR + Selfie — GitHub Pages
 
-Bản này tách frontend khỏi Apps Script. GitHub Pages chỉ phục vụ giao diện; Cloudflare Worker làm API gateway/CORS; Apps Script ghi dữ liệu vào Google Sheets và ảnh vào Drive.
+Frontend chạy trên **GitHub Pages**; Google Apps Script chỉ còn làm API và lưu dữ liệu vào Google Sheets/Drive. Không còn mở giao diện bằng `script.google.com/macros/.../exec` và không dùng `google.script.run`.
 
-## 1. Cấu hình Google Sheet
+## 1. Cấu hình Google Apps Script (backend)
 
-Sheet ID đã được điền trong `gas/Code.gs`:
+1. Tạo/mở Google Spreadsheet dùng lưu dữ liệu.
+2. Mở **Tiện ích mở rộng → Apps Script**.
+3. Thay toàn bộ `Code.gs` bằng file `Code.gs` trong thư mục này.
+4. Trong `ADMIN_CONFIG`, đổi `username` và `password` mặc định `admin / Admin123` thành thông tin mạnh, riêng biệt.
+5. Chạy hàm `setup()` một lần trong Apps Script để cấp quyền và tạo sheet `ChamCong`, `NhanVien`, thư mục Drive ảnh.
+6. Trong `NhanVien`, nhập mã nhân viên ở cột A, họ tên ở cột B.
+7. **Triển khai → Quản lý bản triển khai → Tạo bản triển khai mới → Ứng dụng web**:
+   - Thực thi với tư cách: **Tôi**
+   - Ai có quyền truy cập: **Bất kỳ ai**
+8. Sao chép URL có dạng `https://script.google.com/macros/s/.../exec`.
 
-`1R__aaKBJhbgISjq-uMRqg5G-AOQ1VKIUpNg76h2H-uE`
+> Khi cập nhật `Code.gs`, hãy tạo **Phiên bản mới** cho deployment hiện có, không cần đổi URL.
 
-1. Mở Apps Script tại `https://script.google.com/` và tạo project mới.
-2. Dán toàn bộ `gas/Code.gs` vào file `Code.gs`.
-3. Trong **Project Settings → Script properties**, tạo:
-   - `WORKER_SECRET` = một chuỗi bí mật ngẫu nhiên dài tối thiểu 32 ký tự.
-4. Chạy hàm `setupSystem()` một lần và cấp quyền Google Sheets/Drive.
-5. Mở Google Sheet, tab `Employees`, thêm nhân viên đầu tiên:
-   - Code: mã nhân viên, ví dụ `ADMIN001`
-   - Name: tên quản trị viên
-   - Department: bộ phận
-   - Role: `ADMIN`
-   - Active: `TRUE`
-6. Deploy → New deployment → Web app:
-   - Execute as: **Me**
-   - Who has access: **Anyone** (API được bảo vệ bằng secret ở Worker; không chia sẻ URL/secret).
-   - Deploy và sao chép URL `/exec` làm `GAS_URL`.
+## 2. Cấu hình GitHub Pages (frontend)
 
-`setupSystem()` tạo các tab `Employees`, `Locations`, `Attendance` và thư mục ảnh riêng tư trong Drive. Chạy lại hàm này không xóa dữ liệu hiện có.
+1. Tạo repository GitHub mới (hoặc dùng repository hiện tại).
+2. Upload các file frontend: `index.html`, `admin.html`, `qr.html`, `api.js`, `config.js`.
+3. Mở `config.js`, thay `PASTE_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE` bằng URL `/exec` ở bước 1.
+4. Vào **Settings → Pages**, chọn branch và thư mục chứa file (thường `main` / `/root`), lưu để bật GitHub Pages.
+5. Mở URL GitHub Pages:
+   - Nhân viên: `/`
+   - Admin: `/admin.html`
+   - Mã QR: `/qr.html`
 
-## 2. Cấu hình Cloudflare Worker
+Không dùng URL Apps Script để mở giao diện nữa.
 
-1. Tạo Worker mới trong Cloudflare.
-2. Dán `worker/worker.js`.
-3. Thêm Worker variables/secrets:
-   - `GAS_URL` = URL Web App `/exec`.
-   - `WORKER_SECRET` = đúng chuỗi `WORKER_SECRET` đã đặt trong Apps Script.
-   - `ALLOWED_ORIGIN` = origin GitHub Pages, ví dụ `https://TEN-USER.github.io` (không có dấu `/` cuối).
-4. Deploy và sao chép URL Worker, ví dụ `https://attendance-api.<subdomain>.workers.dev`.
+## 3. Thiết lập vùng chấm công
 
-## 3. Cấu hình GitHub Pages
+1. Truy cập `/admin.html`, đăng nhập.
+2. Ở mục **Vị trí điểm danh trực quan**, đứng tại tâm khu vực cần cho phép (ví dụ cổng nhà máy), bấm **Lấy GPS hiện tại**. Có thể nhập tay vĩ độ/kinh độ.
+3. Chọn bán kính từ **20 đến 5000 mét**, bấm **Lưu khu vực**.
+4. Bản đồ hiển thị vòng tròn khu vực cho phép và các điểm GPS ghi nhận trong ngày:
+   - Xanh: điểm ghi nhận trong bán kính.
+   - Đỏ: điểm ngoài bán kính (nếu dữ liệu cũ hoặc bị thay đổi).
+5. Bảng chi tiết có liên kết **Xem bản đồ**, sai số GPS và khoảng cách đến tâm.
 
-1. Tạo repository GitHub và tải các file trong thư mục này lên.
-2. Mở `assets/js/app.js`, sửa:
-   `const API_URL = "YOUR_CLOUDFLARE_WORKER_URL";`
-   thành URL Worker thật.
-3. Trong GitHub → Settings → Pages, chọn deploy từ branch `main`, folder `/root`.
-4. Chờ GitHub Pages cấp HTTPS. Cập nhật `ALLOWED_ORIGIN` trong Worker đúng origin GitHub Pages, ví dụ `https://TEN-USER.github.io` (không thêm tên repository vào origin).
+## 4. Cách kiểm tra vị trí
 
-## 4. Khởi tạo dữ liệu
+- Nhân viên phải cấp quyền vị trí cho trình duyệt và bật GPS/Location.
+- Hệ thống yêu cầu độ chính xác GPS không quá 100 m; không lấy được GPS hoặc GPS có sai số lớn sẽ không cho gửi.
+- Backend Apps Script tính khoảng cách Haversine từ tọa độ nhận được đến tâm và từ chối nếu vượt bán kính. Không chỉ kiểm tra ở trình duyệt.
+- Chức năng vị trí cần HTTPS; GitHub Pages đáp ứng HTTPS.
+- GPS trên điện thoại có thể sai lệch do nhà xưởng, mái tôn, nhà cao tầng hoặc môi trường trong nhà. Nên thử nghiệm tại địa điểm thực tế và đặt bán kính phù hợp.
 
-- Tab `Employees`: thêm nhân viên. Role hợp lệ: `ADMIN` hoặc `EMPLOYEE`; Active là `TRUE`/`FALSE`.
-- Đăng nhập bằng mã nhân viên.
-- Admin tạo địa điểm với vĩ độ/kinh độ và bán kính. Bán kính mặc định khuyến nghị 100m; có thể chỉnh từ 10 đến 5000m.
-- Có thể lấy tọa độ địa điểm từ Google Maps (nhấn giữ vị trí trên bản đồ để lấy tọa độ).
+## 5. Cấu trúc dữ liệu
 
-## 5. Quy tắc chấm công
+`ChamCong` giữ 11 cột cũ và bổ sung:
+- Vĩ độ, Kinh độ
+- Sai số GPS (m)
+- Khoảng cách đến tâm (m)
 
-- CHẤM RA bị từ chối nếu sự kiện gần nhất không phải CHẤM VÀO.
-- Không cho CHẤM VÀO liên tiếp khi chưa CHẤM RA.
-- Server kiểm tra tọa độ, độ chính xác GPS, địa điểm và bán kính.
-- Mỗi lượt lưu timestamp, mã/tên nhân viên, bộ phận, loại chấm, địa điểm, tọa độ, độ chính xác và URL ảnh selfie.
-- Admin tải CSV theo tháng.
+`CauHinh` lưu tọa độ tâm và bán kính. `NhanVien` giữ nguyên hai cột mã nhân viên/họ tên. Ảnh selfie vẫn lưu trong Drive.
 
-## 6. Kiểm tra bảo mật quan trọng
+Nếu đang có sheet `ChamCong` cũ, chạy lại `setup()` sau khi cập nhật để bổ sung các cột GPS ở cuối.
 
-- Đăng nhập chỉ bằng mã nhân viên là cơ chế nhận diện yếu: người biết mã có thể giả danh nhân viên. Trước khi triển khai chính thức, nên bổ sung PIN/mật khẩu hoặc xác thực Google Workspace.
-- GPS từ trình duyệt có thể bị giả lập/spoof; bán kính chỉ là kiểm tra vị trí do thiết bị gửi, không phải chống gian lận tuyệt đối.
-- Selfie là ảnh minh chứng, chưa có nhận diện khuôn mặt hoặc kiểm tra người thật (liveness).
-- Giữ Google Sheet và thư mục Drive ở chế độ riêng tư. Không đưa `WORKER_SECRET` vào GitHub hoặc frontend.
-- Apps Script Web App được đặt quyền truy cập Anyone để Worker gọi được; endpoint này từ chối yêu cầu thiếu secret. Nếu lộ secret, hãy thay ở cả Apps Script và Worker.
-- Cần kiểm tra chính sách nội bộ, thông báo cho nhân viên về việc thu thập ảnh/vị trí và thời hạn lưu trữ trước khi sử dụng.
+## 6. Lưu ý bảo mật
 
-## 7. Giới hạn phiên bản
-
-Bản v2 là bộ mã nguồn triển khai nền tảng, chưa được deploy/kiểm thử trong tài khoản Google/Cloudflare/GitHub của bạn. Cần hoàn tất các bước cấu hình và chạy thử thực tế. Chưa có tính công, ca đêm, tăng ca, đồng bộ payroll, chống GPS giả mạo nâng cao hay nhận diện khuôn mặt.
+- Đổi ngay mật khẩu admin mẫu trong `Code.gs` trước khi sử dụng thật.
+- Chỉ chia sẻ Google Sheet, Apps Script và thư mục ảnh cho người có trách nhiệm.
+- Web App backend cần cho phép truy cập công khai để nhân viên không phải đăng nhập Google; quyền ghi dữ liệu vẫn thực thi dưới tài khoản chủ sở hữu script. Vì endpoint công khai, cần bảo vệ admin bằng mật khẩu mạnh và cân nhắc bổ sung CAPTCHA/rate limit nếu công khai quy mô lớn.
+- Vị trí GPS và ảnh khuôn mặt là dữ liệu cá nhân. Cần thông báo mục đích, phạm vi lưu trữ, người được truy cập và thời hạn lưu; tuân thủ quy định bảo vệ dữ liệu cá nhân.
+- GPS chỉ là tín hiệu kiểm tra vị trí thiết bị, không chứng minh tuyệt đối người lao động đang cầm thiết bị hay ngăn giả lập vị trí.

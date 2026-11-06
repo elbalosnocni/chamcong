@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mã QR điểm danh - Liwayway VN</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#eef2ef;color:#17231d;font-family:system-ui,sans-serif;display:grid;place-items:center;padding:20px}
+main{width:min(560px,100%);background:#fff;border:1px solid #dce5de;border-radius:20px;padding:28px;text-align:center;box-shadow:0 12px 40px #18332212}
+h1{font-size:1.5rem;margin:0 0 8px}p{color:#607067;line-height:1.5}#qr{display:grid;place-items:center;margin:22px auto;min-height:280px}#qr img{max-width:100%;height:auto}a{color:#087443;overflow-wrap:anywhere}
+button{border:0;border-radius:10px;background:#087443;color:white;font-weight:700;padding:12px 18px;cursor:pointer}
+</style><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script></head>
+<body><main><h1>CÔNG TY CỔ PHẦN LIWAYWAY VN</h1><p>Quét mã QR để mở trang điểm danh nhân viên</p><div id="qr"></div><p id="url"></p><button id="download">Tải mã QR PNG</button></main>
+<script>
+const target=new URL('./index.html',location.href).href;
+document.getElementById('url').innerHTML='<a href="'+target+'">'+target+'</a>';
+new QRCode(document.getElementById('qr'),{text:target,width:320,height:320,correctLevel:QRCode.CorrectLevel.M});
+document.getElementById('download').onclick=()=>{const img=document.querySelector('#qr img');const canvas=document.querySelector('#qr canvas');const a=document.createElement('a');a.href=img?img.src:canvas.toDataURL('image/png');a.download='QR_DiemDanh_Liwayway.png';a.click();};
+</script></body></html>
