@@ -44,26 +44,58 @@ function doGet(e) {
 
 function doPost(e) {
   var payload = {};
+  var nonce = "";
   try {
-    payload = JSON.parse((e && e.parameter && e.parameter.payload) || '{}');
+    // Xử lý đọc dữ liệu linh hoạt (Hỗ trợ cả Form POST thông thường và RAW JSON POST)
+    var rawPayload = "";
+    if (e && e.parameter && e.parameter.payload) {
+      rawPayload = e.parameter.payload;
+    } else if (e && e.postData && e.postData.contents) {
+      // Trường hợp dữ liệu đẩy thẳng qua body text
+      if (e.postData.contents.indexOf("payload=") === 0) {
+        rawPayload = decodeURIComponent(e.postData.contents.substring(8));
+      } else {
+        rawPayload = e.postData.contents;
+      }
+    }
+    
+    payload = JSON.parse(rawPayload || '{}');
+    nonce = String(payload.nonce || '');
+    
     var action = String(payload.action || '');
     var d = payload.data || {};
     var result;
+    
+    // Điều hướng các Action
     if (action === 'checkAdminLogin') result = checkAdminLogin(d.username, d.password);
     else if (action === 'logoutAdmin') result = logoutAdmin(d.token);
     else if (action === 'getAdminDashboardData') result = getAdminDashboardData(d.token, d.date);
     else if (action === 'submitCheckin') result = submitCheckin(d);
     else if (action === 'saveGeofence') result = saveGeofence(d.token, d.lat, d.lng, d.radius);
     else result = {success:false, ok:false, message:'API action không hợp lệ.'};
-    return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><script>parent.postMessage({type:"DD_API_RESULT",nonce:' +
-      JSON.stringify(String(payload.nonce || '')) + ',result:' + JSON.stringify(result).replace(/</g,'\\u003c') +
-      '}, "*");</script>').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    
+    // Trả về HTML chứa script postMessage an toàn
+    var htmlContent = '<!doctype html><meta charset="utf-8"><body>' +
+      '<script>' +
+      '  var responseData = { type: "DD_API_RESULT", nonce: ' + JSON.stringify(nonce) + ', result: ' + JSON.stringify(result).replace(/</g, '\\u003c') + ' };' +
+      '  window.parent.postMessage(responseData, "*");' +
+      '<\/script></body>';
+      
+    return HtmlService.createHtmlOutput(htmlContent)
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      
   } catch (err) {
-    return HtmlService.createHtmlOutput('<!doctype html><script>parent.postMessage({type:"DD_API_RESULT",nonce:' +
-      JSON.stringify(String(payload.nonce || '')) + ',result:{success:false,ok:false,message:' +
-      JSON.stringify(String(err)).replace(/</g,'\\u003c') + '}}, "*");</script>').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    var errorResult = { success: false, ok: false, message: 'Lỗi hệ thống: ' + err.toString() };
+    var errorHtml = '<!doctype html><meta charset="utf-8"><body>' +
+      '<script>' +
+      '  window.parent.postMessage({ type: "DD_API_RESULT", nonce: ' + JSON.stringify(nonce) + ', result: ' + JSON.stringify(errorResult).replace(/</g, '\\u003c') + ' }, "*");' +
+      '<\/script></body>';
+      
+    return HtmlService.createHtmlOutput(errorHtml)
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 }
+
 
 function getAdminCredentials_() {
   var props = PropertiesService.getScriptProperties();
