@@ -31,8 +31,10 @@
       const timer=setTimeout(()=>{cleanup();reject(new Error('Hết thời gian chờ phản hồi từ máy chủ.'));},60000);
       function cleanup(){clearTimeout(timer);window.removeEventListener('message',onMessage);form.remove();iframe.remove();}
       function onMessage(ev){
-        if(ev.source!==iframe.contentWindow||!ev.data||ev.data.type!=='DD_API_RESULT'||ev.data.nonce!==nonce)return;
-        cleanup();resolve(ev.data.result);
+        // Bỏ bớt điều kiện ev.source để tránh lỗi bảo mật nghiêm ngặt từ Google Script
+        if(!ev.data || ev.data.type !== 'DD_API_RESULT' || ev.data.nonce !== nonce) return;
+        cleanup();
+        resolve(ev.data.result);
       }
       window.addEventListener('message',onMessage);
       document.body.appendChild(iframe);document.body.appendChild(form);form.submit();
