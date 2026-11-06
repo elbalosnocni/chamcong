@@ -68,12 +68,16 @@ input[readonly]{opacity:.8}
       <button type="button" id="t-in" aria-pressed="true">Vào ca</button>
       <button type="button" id="t-out" aria-pressed="false">Ra ca</button>
     </div>
-    <div class="shot" id="shot"><span>Chưa có ảnh. Bấm “Chụp selfie” để mở camera trước.</span></div>
+    <div class="shot" id="shot"><span>Nhấn “Bật camera & định vị” để cấp quyền trước khi điểm danh.</span></div>
+    <video id="camera-preview" autoplay playsinline muted hidden style="width:100%;max-height:360px;object-fit:cover;border-radius:14px"></video>
+    <canvas id="capture-canvas" hidden></canvas>
     <input type="file" id="cam" accept="image/*" capture="user" hidden>
     <div class="row">
-      <button class="btn ghost" id="snap" type="button">Chụp selfie</button>
+      <button class="btn ghost" id="enable-device" type="button">Bật camera & định vị</button>
+      <button class="btn ghost" id="snap" type="button" disabled>Chụp selfie</button>
       <button class="btn" id="send" type="button" disabled>Gửi điểm danh</button>
     </div>
+    <p class="hint">Bắt buộc cho phép Camera và Vị trí (GPS). Nếu đã chặn quyền, mở Cài đặt trình duyệt/điện thoại để bật lại.</p>
     <div id="status" class="msg" hidden></div>
     <p class="hint">Ảnh được đóng dấu họ tên và giờ chụp. Hãy chụp ngay tại nơi làm việc, không dùng ảnh có sẵn.</p>
   </section>
@@ -82,7 +86,7 @@ input[readonly]{opacity:.8}
 <script>
 (function(){
   var $=function(i){return document.getElementById(i)};
-  var type='in',photo=null,photoAge=0,busy=false,listed=false,device='';
+  var type='in',photo=null,photoAge=0,busy=false,listed=false,device='',cameraStream=null,deviceReady=false;
   function pad(n){return String(n).padStart(2,'0')}
   function hms(d){return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())}
   function dmy(d){return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()}
@@ -114,7 +118,33 @@ input[readonly]{opacity:.8}
   }
   $('code').onchange=lookup;
 
-  $('snap').onclick=function(){$('cam').value='';$('cam').click()};
+  function stopCamera(){if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;}}
+  $('enable-device').onclick=async function(){
+    try{
+      if(!window.isSecureContext)throw new Error('Trang điểm danh phải chạy bằng HTTPS.');
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('Trình duyệt không hỗ trợ mở camera trực tiếp. Hãy dùng Safari/Chrome mới nhất.');
+      say('Đang yêu cầu quyền camera và định vị...');
+      cameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:1280}},audio:false});
+      $('camera-preview').srcObject=cameraStream;$('camera-preview').hidden=false;
+      await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:20000,maximumAge:0}));
+      deviceReady=true;$('snap').disabled=false;$('enable-device').textContent='Đã bật thiết bị';
+      say('Đã cấp quyền camera và định vị. Hãy chụp selfie.');ready();
+    }catch(e){
+      stopCamera();$('camera-preview').hidden=true;deviceReady=false;
+      let msg=e&&e.code===1?'Bạn đã từ chối quyền GPS. Hãy vào Cài đặt > Quyền riêng tư/Vị trí và cho phép trình duyệt.':
+        (e&&e.name==='NotAllowedError'?'Bạn đã chặn camera. Hãy vào Cài đặt > Camera và cho phép trình duyệt.':(e.message||'Không thể bật camera/định vị.'));
+      say(msg,true);
+    }
+  };
+  $('snap').onclick=function(){
+    if(!cameraStream||!deviceReady){say('Hãy bật camera và định vị trước.',true);return;}
+    const v=$('camera-preview'),c=$('capture-canvas'),w=Math.min(720,v.videoWidth||720),h=Math.round((v.videoHeight||720)*w/(v.videoWidth||720));
+    c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.drawImage(v,0,0,w,h);
+    const now=new Date(),label=$('name').value.trim()+' · '+dmy(now)+' '+hms(now);
+    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(0,h-30,w,30);ctx.fillStyle='#fff';ctx.font='16px sans-serif';ctx.fillText(label,10,h-15,w-20);
+    photo=c.toDataURL('image/jpeg',.72);photoAge=0;$('shot').innerHTML='';const im=new Image();im.src=photo;im.alt='Ảnh selfie vừa chụp';im.style='width:100%;border-radius:12px';$('shot').appendChild(im);
+    stopCamera();v.hidden=true;$('snap').disabled=true;say('Đã chụp ảnh mới. Kiểm tra rồi gửi điểm danh.');ready();
+  };
   $('cam').onchange=function(){
     var f=this.files&&this.files[0];if(!f)return;
     photoAge=Math.max(0,Math.round((Date.now()-(f.lastModified||Date.now()))/1000));
@@ -148,7 +178,7 @@ input[readonly]{opacity:.8}
       AttendanceAPI.post('submitCheckin',{code:code,name:name,type:type,photo:photo,photoAgeSec:photoAge,device:device,location:location})
       .then(function(r){
         busy=false;
-        if(r&&r.ok){say('Xin chào '+(r.name||name)+'. '+r.message);photo=null;$('shot').innerHTML='<span>Chưa có ảnh. Bấm “Chụp selfie” để mở camera trước.</span>';}
+        if(r&&r.ok){say('Xin chào '+(r.name||name)+'. '+r.message);photo=null;deviceReady=false;$('enable-device').textContent='Bật camera & định vị';$('shot').innerHTML='<span>Chưa có ảnh. Bật camera và chụp selfie mới.</span>';}
         else{say((r&&r.message)||'Chưa gửi được. Thử lại.',true)}
         ready();
       }).catch(function(e){busy=false;say('Lỗi kết nối: '+e.message,true);ready();});

@@ -14,8 +14,8 @@ var BREAK_MINUTES = 0;             // Phút nghỉ trừ khỏi mỗi ca
 var SHIFT_START_TIME = '08:00';
 
 // Chỉ số cột cấu hình (Bắt đầu từ 1)
-var C = { DATE: 1, CODE: 2, NAME: 3, IN: 4, OUT: 5, HOURS: 6, PHOTO_IN: 7, PHOTO_OUT: 8, WARN: 9, DEV_IN: 10, DEV_OUT: 11, LAT: 12, LNG: 13, ACCURACY: 14, DISTANCE: 15 };
-var HEADERS = ['Ngày', 'Mã NV', 'Họ tên', 'Giờ vào', 'Giờ ra', 'Số giờ', 'Ảnh vào', 'Ảnh ra', 'Cảnh báo', 'Thiết bị vào', 'Thiết bị ra', 'Vĩ độ', 'Kinh độ', 'Sai số GPS (m)', 'Khoảng cách (m)'];
+var C = { DATE:1, CODE:2, NAME:3, IN:4, OUT:5, HOURS:6, PHOTO_IN:7, PHOTO_OUT:8, WARN:9, DEV_IN:10, DEV_OUT:11, LAT:12, LNG:13, ACCURACY:14, DISTANCE:15, LAT_IN:16, LNG_IN:17, ACC_IN:18, DIST_IN:19, LAT_OUT:20, LNG_OUT:21, ACC_OUT:22, DIST_OUT:23 };
+var HEADERS = ['Ngày','Mã NV','Họ tên','Giờ vào','Giờ ra','Số giờ','Ảnh vào','Ảnh ra','Cảnh báo','Thiết bị vào','Thiết bị ra','Vĩ độ gần nhất','Kinh độ gần nhất','Sai số GPS gần nhất (m)','Khoảng cách gần nhất (m)','Vĩ độ vào','Kinh độ vào','Sai số GPS vào (m)','Khoảng cách vào (m)','Vĩ độ ra','Kinh độ ra','Sai số GPS ra (m)','Khoảng cách ra (m)'];
 
 // Cấu hình tài khoản đăng nhập Admin Dashboard
 const ADMIN_CONFIG = {
@@ -234,6 +234,8 @@ function getAdminDashboardData(token, targetDateStr) {
               photoOutId: driveFileId_(ddFormulas[ddIndex][C.PHOTO_OUT - 1] || row[C.PHOTO_OUT - 1]),
               warning: warningText,
               lat: row[C.LAT-1] || null, lng: row[C.LNG-1] || null, accuracy: row[C.ACCURACY-1] || null, distance: row[C.DISTANCE-1] || null,
+              latIn:row[C.LAT_IN-1]||row[C.LAT-1]||null,lngIn:row[C.LNG_IN-1]||row[C.LNG-1]||null,accuracyIn:row[C.ACC_IN-1]||row[C.ACCURACY-1]||null,distanceIn:row[C.DIST_IN-1]||row[C.DISTANCE-1]||null,
+              latOut:row[C.LAT_OUT-1]||null,lngOut:row[C.LNG_OUT-1]||null,accuracyOut:row[C.ACC_OUT-1]||null,distanceOut:row[C.DIST_OUT-1]||null,
               status: status
             });
           }
@@ -315,7 +317,7 @@ return {success:true,dataUrl:'data:'+mime+';base64,'+Utilities.base64Encode(blob
 }
 function getGeofence_() {
 var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CauHinh');
-var out = {lat:null, lng:null, radius:150};
+var out = {lat:null, lng:null, radius:100};
 if (!sh) return out;
 var lastRow = sh.getLastRow();
 if (lastRow < 1) return out;
@@ -325,10 +327,11 @@ values.forEach(function(r) {
   var raw = r[1];
   if (key === 'GEOFENCE_LAT') out.lat = raw === '' || raw === null ? null : Number(raw);
   if (key === 'GEOFENCE_LNG') out.lng = raw === '' || raw === null ? null : Number(raw);
-  if (key === 'GEOFENCE_RADIUS') out.radius = Number(raw) || 150;
+  // Bán kính được khóa cứng 100 m theo chính sách điểm danh.
 });
 if (out.lat === null || !isFinite(out.lat) || out.lat < -90 || out.lat > 90) out.lat = null;
 if (out.lng === null || !isFinite(out.lng) || out.lng < -180 || out.lng > 180) out.lng = null;
+out.radius = 100;
 return out;
 }
 function getPublicConfig(){
@@ -338,8 +341,8 @@ return {success:true, geofence:{lat:g.lat, lng:g.lng, radius:g.radius, enabled: 
 function saveGeofence(token,lat,lng,radius) {
 if (!isAdminTokenValid_(token)) return {success:false,message:'Phiên đăng nhập hết hạn.'};
 lat=Number(lat);lng=Number(lng);radius=Number(radius);
-if(!isFinite(lat)||lat < -90||lat>90||!isFinite(lng)||lng < -180||lng>180||!isFinite(radius)||radius<20||radius>5000)
-return {success:false,message:'Tọa độ hoặc bán kính không hợp lệ (20–5000 m).'};
+if(!isFinite(lat)||lat < -90||lat>90||!isFinite(lng)||lng < -180||lng>180||radius !== 100)
+return {success:false,message:'Tọa độ không hợp lệ. Bán kính hệ thống được cố định 100 m.'};
 var ss=SpreadsheetApp.getActiveSpreadsheet(),sh=ss.getSheetByName('CauHinh')||ss.insertSheet('CauHinh');
 sh.clearContents(); // Sửa từ clear() sang clearContents để giữ định dạng cột
 sh.getRange(1,1,3,2).setValues([['GEOFENCE_LAT',lat],['GEOFENCE_LNG',lng],['GEOFENCE_RADIUS',radius]]);
@@ -383,7 +386,7 @@ sh.setColumnWidth(C.IN, 150);
 sh.setColumnWidth(C.OUT, 150);
 sh.setColumnWidth(C.WARN, 280);
 }
-if (sh.getLastColumn() < HEADERS.length) sh.getRange(1,1,1,HEADERS.length).setValues([HEADERS]);
+sh.getRange(1,1,1,HEADERS.length).setValues([HEADERS]);
 return sh;
 }
 function getStaffSheet_() {
@@ -513,7 +516,7 @@ var url = getFolder_().createFile(blob).getUrl();
 var link = '=HYPERLINK("' + url + '","Xem ảnh")';
 if (!isOut) {
 if (open && openHours >= MAX_SHIFT_HOURS) addWarn_(sh, prevRow, 'Quên điểm danh ra ca');
-sh.appendRow([now, code, name, now, '', '', '', '', warns.join('; '), device, '', lat, lng, accuracy, distance]);
+sh.appendRow([now,code,name,now,'','','','','',device,'',lat,lng,accuracy,distance,lat,lng,accuracy,distance,'','','','']);
 var row = sh.getLastRow();
 sh.getRange(row, C.DATE).setNumberFormat('dd/MM/yyyy');
 sh.getRange(row, C.IN).setNumberFormat('dd/MM/yyyy HH:mm:ss');
@@ -527,7 +530,8 @@ if (open && openHours <= MAX_SHIFT_HOURS) {
 sh.getRange(prevRow, C.OUT).setValue(now).setNumberFormat('dd/MM/yyyy HH:mm:ss');
 sh.getRange(prevRow, C.PHOTO_OUT).setFormula(link);
 sh.getRange(prevRow, C.DEV_OUT).setValue(device);
-sh.getRange(prevRow, C.LAT, 1, 4).setValues([[lat,lng,accuracy,distance]]);
+sh.getRange(prevRow,C.LAT,1,4).setValues([[lat,lng,accuracy,distance]]);
+sh.getRange(prevRow,C.LAT_OUT,1,4).setValues([[lat,lng,accuracy,distance]]);
 sh.getRange(prevRow, C.HOURS).setFormula(hoursFormula_(prevRow)).setNumberFormat('0.00');
 warns.forEach(function (w) { addWarn_(sh, prevRow, w); });
 var worked = Math.max(0, openHours - BREAK_MINUTES / 60);
@@ -537,7 +541,7 @@ return { ok: true, name: name, message: 'Đã ra ca lúc ' + nowTxt + '. Hôm na
 }
 if (open && openHours > MAX_SHIFT_HOURS) addWarn_(sh, prevRow, 'Quên điểm danh ra ca');
 warns.unshift('Thiếu giờ vào');
-sh.appendRow([now, code, name, '', now, '', '', '', warns.join('; '), '', device, lat, lng, accuracy, distance]);
+sh.appendRow([now,code,name,'',now,'','','',warns.join('; '),'',device,lat,lng,accuracy,distance,'','','','',lat,lng,accuracy,distance]);
 var r2 = sh.getLastRow();
 sh.getRange(r2, C.DATE).setNumberFormat('dd/MM/yyyy');
 sh.getRange(r2, C.IN).setNumberFormat('dd/MM/yyyy HH:mm:ss');

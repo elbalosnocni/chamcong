@@ -1,68 +1,75 @@
-# Hệ thống điểm danh QR + Selfie — GitHub Pages
+# Hệ thống điểm danh QR + Camera Selfie + GPS — Liwayway VN
 
-Frontend chạy trên **GitHub Pages**; Google Apps Script chỉ còn làm API và lưu dữ liệu vào Google Sheets/Drive. Không còn mở giao diện bằng `script.google.com/macros/.../exec` và không dùng `google.script.run`.
+Frontend chạy trên GitHub Pages (HTTPS); backend Google Apps Script lưu dữ liệu trong Google Sheets và ảnh trong Google Drive.
 
-## 1. Cấu hình Google Apps Script (backend)
+## Chức năng bản Final
 
-1. Tạo/mở Google Spreadsheet dùng lưu dữ liệu.
-2. Mở **Tiện ích mở rộng → Apps Script**.
-3. Thay toàn bộ `Code.gs` bằng file `Code.gs` trong thư mục này.
-4. Trong `ADMIN_CONFIG`, đổi `username` và `password` mặc định `admin / Admin123` thành thông tin mạnh, riêng biệt.
-5. Chạy hàm `setup()` một lần trong Apps Script để cấp quyền và tạo sheet `ChamCong`, `NhanVien`, thư mục Drive ảnh.
-6. Trong `NhanVien`, nhập mã nhân viên ở cột A, họ tên ở cột B.
-7. **Triển khai → Quản lý bản triển khai → Tạo bản triển khai mới → Ứng dụng web**:
+- Nhân viên mở QR, nhập mã nhân viên, chọn **Vào ca/Ra ca**.
+- Bấm **Bật camera & định vị**: trình duyệt yêu cầu cấp quyền camera và vị trí. Không cấp đủ hai quyền thì không thể chụp và gửi điểm danh.
+- Camera trước mở trực tiếp bằng `getUserMedia`; ảnh được chụp từ luồng camera, đóng dấu họ tên/thời gian tại thiết bị và gửi lên máy chủ.
+- Mỗi lượt gửi lấy GPS mới; backend kiểm tra tọa độ và sai số GPS không quá 100 m.
+- Backend tính khoảng cách Haversine và **từ chối nếu thiết bị ở ngoài bán kính cố định 100 m**. Bán kính không thể tăng từ giao diện Admin.
+- Admin đăng nhập dashboard, lọc ngày/tìm nhân viên, xem ảnh vào/ra (qua API có xác thực), xem bản đồ và tọa độ GPS riêng cho cả lượt vào lẫn lượt ra.
+- Lưu riêng GPS vào/ra trong các cột mới; giữ các cột GPS cũ để tương thích báo cáo cũ.
+
+> Trình duyệt web không thể tự bật quyền khi người dùng đã chọn “Từ chối” hoặc tự mở trang Cài đặt hệ điều hành. Hệ thống sẽ yêu cầu quyền khi người dùng bấm nút; nếu đã chặn, nhân viên cần tự bật Camera và Vị trí cho Safari/Chrome trong Cài đặt điện thoại rồi tải lại trang. Chỉ hoạt động trên HTTPS (GitHub Pages đáp ứng).
+
+## 1. Cài backend Google Apps Script
+
+1. Mở Google Spreadsheet dùng lưu dữ liệu → **Tiện ích mở rộng → Apps Script**.
+2. Thay toàn bộ `Code.gs` bằng file `Code.gs` trong gói này.
+3. Đổi tài khoản/mật khẩu trong `ADMIN_CONFIG` hoặc chạy `setAdminCredentials()` sau khi sửa username/password trong hàm. Không sử dụng mật khẩu mẫu `admin / Admin123` khi vận hành thật.
+4. Chạy `setup()` một lần và cấp quyền truy cập Google Sheets/Drive.
+   - Tự tạo/cập nhật sheet `ChamCong`, `NhanVien`, thư mục Drive ảnh `DiemDanh_Anh`.
+   - Sheet `ChamCong` cũ được bổ sung các cột GPS riêng cho vào/ra ở cuối, dữ liệu cũ không bị xóa.
+5. Trong `NhanVien`, nhập mã nhân viên ở cột A và họ tên ở cột B.
+6. **Triển khai → Quản lý bản triển khai → Chỉnh sửa/Tạo bản triển khai → Ứng dụng web**:
    - Thực thi với tư cách: **Tôi**
    - Ai có quyền truy cập: **Bất kỳ ai**
-8. Sao chép URL có dạng `https://script.google.com/macros/s/.../exec`.
+7. Sao chép URL Web App kết thúc bằng `/exec`.
 
-> Khi cập nhật `Code.gs`, hãy tạo **Phiên bản mới** cho deployment hiện có, không cần đổi URL.
+Khi cập nhật `Code.gs`, chọn **Triển khai → Quản lý bản triển khai → Chỉnh sửa → Phiên bản mới**. Giữ nguyên URL nếu cập nhật deployment hiện tại.
 
-## 2. Cấu hình GitHub Pages (frontend)
+## 2. Cài frontend GitHub Pages
 
-1. Tạo repository GitHub mới (hoặc dùng repository hiện tại).
-2. Upload các file frontend: `index.html`, `admin.html`, `qr.html`, `api.js`, `config.js`.
-3. Mở `config.js`, thay `PASTE_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE` bằng URL `/exec` ở bước 1.
-4. Vào **Settings → Pages**, chọn branch và thư mục chứa file (thường `main` / `/root`), lưu để bật GitHub Pages.
-5. Mở URL GitHub Pages:
-   - Nhân viên: `/`
+1. Upload `index.html`, `admin.html`, `qr.html`, `api.js`, `config.js` lên repository.
+2. Trong `config.js`, dán URL Apps Script `/exec` vào `ATTENDANCE_API_URL`.
+3. Bật GitHub Pages tại **Settings → Pages** (branch `main`, thư mục `/root` hoặc thư mục chứa file).
+4. Sử dụng:
+   - Nhân viên: URL GitHub Pages `/`
    - Admin: `/admin.html`
-   - Mã QR: `/qr.html`
+   - QR: `/qr.html`
 
-Không dùng URL Apps Script để mở giao diện nữa.
+## 3. Cấu hình vị trí nhà máy (bắt buộc)
 
-## 3. Thiết lập vùng chấm công
+1. Admin mở `/admin.html`, đăng nhập.
+2. Ở **Vị trí điểm danh trực quan**, đứng tại vị trí trung tâm (ví dụ cổng nhà máy), bấm **Lấy GPS hiện tại**.
+3. Bấm **Lưu khu vực**. Bán kính được cố định 100 m.
+4. Bản đồ Admin hiển thị vòng tròn 100 m và hai điểm GPS (nếu có) của mỗi nhân viên:
+   - Điểm xanh: trong bán kính.
+   - Điểm đỏ: ngoài bán kính (có thể xuất hiện ở dữ liệu cũ hoặc khi cấu hình thay đổi).
+5. Bảng chi tiết có liên kết xem riêng vị trí **Vào** và **Ra**, sai số GPS và khoảng cách tới tâm.
 
-1. Truy cập `/admin.html`, đăng nhập.
-2. Ở mục **Vị trí điểm danh trực quan**, đứng tại tâm khu vực cần cho phép (ví dụ cổng nhà máy), bấm **Lấy GPS hiện tại**. Có thể nhập tay vĩ độ/kinh độ.
-3. Chọn bán kính từ **20 đến 5000 mét**, bấm **Lưu khu vực**.
-4. Bản đồ hiển thị vòng tròn khu vực cho phép và các điểm GPS ghi nhận trong ngày:
-   - Xanh: điểm ghi nhận trong bán kính.
-   - Đỏ: điểm ngoài bán kính (nếu dữ liệu cũ hoặc bị thay đổi).
-5. Bảng chi tiết có liên kết **Xem bản đồ**, sai số GPS và khoảng cách đến tâm.
+## 4. Luồng nhân viên
 
-## 4. Cách kiểm tra vị trí
+1. Mở trang điểm danh bằng QR trên Safari/Chrome; đảm bảo trang có HTTPS.
+2. Nhập mã nhân viên, kiểm tra họ tên; chọn Vào ca hoặc Ra ca.
+3. Bấm **Bật camera & định vị**, chọn Cho phép cho cả Camera và Vị trí.
+4. Nhìn vào camera, bấm **Chụp selfie**, kiểm tra ảnh rồi bấm **Gửi điểm danh**.
+5. Nếu GPS báo sai số trên 100 m, di chuyển ra nơi thoáng hơn và thử lại.
+6. Nếu đã chặn quyền: iPhone vào **Cài đặt → Safari → Camera/Vị trí** (hoặc Cài đặt → Ứng dụng → Chrome → Quyền); Android vào **Cài đặt → Ứng dụng → Chrome → Quyền → Camera/Vị trí**. Tên mục có thể khác theo phiên bản hệ điều hành.
 
-- Nhân viên phải cấp quyền vị trí cho trình duyệt và bật GPS/Location.
-- Hệ thống yêu cầu độ chính xác GPS không quá 100 m; không lấy được GPS hoặc GPS có sai số lớn sẽ không cho gửi.
-- Backend Apps Script tính khoảng cách Haversine từ tọa độ nhận được đến tâm và từ chối nếu vượt bán kính. Không chỉ kiểm tra ở trình duyệt.
-- Chức năng vị trí cần HTTPS; GitHub Pages đáp ứng HTTPS.
-- GPS trên điện thoại có thể sai lệch do nhà xưởng, mái tôn, nhà cao tầng hoặc môi trường trong nhà. Nên thử nghiệm tại địa điểm thực tế và đặt bán kính phù hợp.
+## 5. Dữ liệu và bảo mật
 
-## 5. Cấu trúc dữ liệu
+- `ChamCong`: ngày, mã NV, giờ vào/ra, ảnh vào/ra, cảnh báo, GPS gần nhất và GPS riêng cho vào/ra.
+- Ảnh selfie lưu trong Drive; dashboard lấy ảnh qua `getPhoto` có kiểm tra token Admin, không cần chia sẻ công khai thư mục ảnh.
+- Web App cần cho phép truy cập công khai để nhân viên không phải đăng nhập Google. Vì vậy cần mật khẩu Admin mạnh, không chia sẻ URL quản trị/mật khẩu, chỉ cấp quyền Spreadsheet và Drive cho người có trách nhiệm.
+- GPS là tín hiệu định vị thiết bị, không chứng minh tuyệt đối người lao động đang cầm thiết bị và không chống giả lập GPS chuyên dụng.
+- Ảnh khuôn mặt và dữ liệu vị trí là dữ liệu cá nhân: cần thông báo mục đích, phạm vi sử dụng, thời hạn lưu, người được truy cập và tuân thủ quy định bảo vệ dữ liệu cá nhân.
 
-`ChamCong` giữ 11 cột cũ và bổ sung:
-- Vĩ độ, Kinh độ
-- Sai số GPS (m)
-- Khoảng cách đến tâm (m)
+## 6. Kiểm tra trước khi chạy thật
 
-`CauHinh` lưu tọa độ tâm và bán kính. `NhanVien` giữ nguyên hai cột mã nhân viên/họ tên. Ảnh selfie vẫn lưu trong Drive.
-
-Nếu đang có sheet `ChamCong` cũ, chạy lại `setup()` sau khi cập nhật để bổ sung các cột GPS ở cuối.
-
-## 6. Lưu ý bảo mật
-
-- Đổi ngay mật khẩu admin mẫu trong `Code.gs` trước khi sử dụng thật.
-- Chỉ chia sẻ Google Sheet, Apps Script và thư mục ảnh cho người có trách nhiệm.
-- Web App backend cần cho phép truy cập công khai để nhân viên không phải đăng nhập Google; quyền ghi dữ liệu vẫn thực thi dưới tài khoản chủ sở hữu script. Vì endpoint công khai, cần bảo vệ admin bằng mật khẩu mạnh và cân nhắc bổ sung CAPTCHA/rate limit nếu công khai quy mô lớn.
-- Vị trí GPS và ảnh khuôn mặt là dữ liệu cá nhân. Cần thông báo mục đích, phạm vi lưu trữ, người được truy cập và thời hạn lưu; tuân thủ quy định bảo vệ dữ liệu cá nhân.
-- GPS chỉ là tín hiệu kiểm tra vị trí thiết bị, không chứng minh tuyệt đối người lao động đang cầm thiết bị hay ngăn giả lập vị trí.
+- Thử bằng iPhone và Android thực tế tại nhà máy; kiểm tra cấp quyền camera/GPS.
+- Thử ở trong vòng 100 m và ngoài vòng 100 m; ngoài vùng phải bị backend từ chối.
+- Thử Vào → Ra, kiểm tra ảnh và tọa độ hai lượt hiển thị đúng trong dashboard.
+- Thử đăng xuất/đăng nhập Admin và tải ảnh khi thư mục Drive vẫn để riêng tư.

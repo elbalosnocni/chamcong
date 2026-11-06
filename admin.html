@@ -58,7 +58,7 @@
         <div class="grid gap-3 sm:grid-cols-4">
           <label class="text-sm">Vĩ độ trung tâm<input id="geo-lat" type="number" step="any" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="10.98"></label>
           <label class="text-sm">Kinh độ trung tâm<input id="geo-lng" type="number" step="any" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="106.65"></label>
-          <label class="text-sm">Bán kính (m)<input id="geo-radius" type="number" min="20" max="5000" value="150" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"></label>
+          <label class="text-sm">Bán kính (m)<input id="geo-radius" type="number" min="100" max="100" value="100" readonly class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"></label>
           <div class="flex items-end gap-2"><button onclick="captureAdminLocation()" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm">Lấy GPS hiện tại</button><button onclick="saveGeofenceConfig()" class="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Lưu khu vực</button></div>
         </div>
         <div id="attendance-map" class="h-96 w-full rounded-xl border border-slate-200"></div>
@@ -87,7 +87,7 @@ let adminToken = sessionStorage.getItem('adminToken') || '';
 const $ = id => document.getElementById(id);
 const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function todayLocal(){const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');}
-window.addEventListener('load',()=>{$('filter-date').value=todayLocal();if(adminToken){showDashboard();loadDashboardData();}});
+window.addEventListener('load',()=>{$('filter-date').value=todayLocal();if(adminToken){showDashboard();loadDashboardData();loadGeofenceConfig();}});
 $('login-form').addEventListener('submit',e=>{e.preventDefault();handleLogin();});
 function showDashboard(){$('login-container').classList.add('hidden');$('dashboard-container').classList.remove('hidden');}
 function showLogin(){$('dashboard-container').classList.add('hidden');$('login-container').classList.remove('hidden');}
@@ -110,7 +110,7 @@ function loadDashboardData(){
   masterData=Array.isArray(res.detailRecords)?res.detailRecords:[];applyFiltersAndSearch();renderAttendanceMap();
  }).catch(e=>{spinner.classList.add('hidden');err.textContent='Lỗi máy chủ: '+e.message;err.classList.remove('hidden');});
 }
-let map=null,markersLayer=null,fenceLayer=null,geofence={lat:null,lng:null,radius:150,enabled:false};
+let map=null,markersLayer=null,fenceLayer=null,geofence={lat:null,lng:null,radius:100,enabled:false};
 function initAttendanceMap(){
  if(map)return;
  map=L.map('attendance-map').setView([10.98,106.65],13);
@@ -119,7 +119,7 @@ function initAttendanceMap(){
 }
 function loadGeofenceConfig(){
  AttendanceAPI.get('getPublicConfig').then(r=>{
-  if(r&&r.geofence){geofence=r.geofence;$('geo-lat').value=geofence.lat==null?'':geofence.lat;$('geo-lng').value=geofence.lng==null?'':geofence.lng;$('geo-radius').value=geofence.radius||150;updateGeoStatus();renderAttendanceMap();}
+  if(r&&r.geofence){geofence=r.geofence;$('geo-lat').value=geofence.lat==null?'':geofence.lat;$('geo-lng').value=geofence.lng==null?'':geofence.lng;$('geo-radius').value=100;updateGeoStatus();renderAttendanceMap();}
  }).catch(e=>{$('geo-status').textContent='Không tải được cấu hình';});
 }
 function updateGeoStatus(){
@@ -131,7 +131,7 @@ function captureAdminLocation(){
  navigator.geolocation.getCurrentPosition(p=>{$('geo-lat').value=p.coords.latitude.toFixed(7);$('geo-lng').value=p.coords.longitude.toFixed(7);},e=>alert('Không lấy được vị trí: '+e.message),{enableHighAccuracy:true,timeout:20000});
 }
 function saveGeofenceConfig(){
- const lat=Number($('geo-lat').value),lng=Number($('geo-lng').value),radius=Number($('geo-radius').value);
+ const lat=Number($('geo-lat').value),lng=Number($('geo-lng').value),radius=100;
  AttendanceAPI.post('saveGeofence',{token:adminToken,lat,lng,radius}).then(r=>{
   if(!r||!r.success){alert((r&&r.message)||'Không lưu được.');return;}
   geofence=r.geofence;updateGeoStatus();renderAttendanceMap();alert(r.message);
@@ -157,7 +157,7 @@ function renderAttendanceMap(){
 }
 function focusAttendancePoint(lat,lng){initAttendanceMap();map.setView([lat,lng],18);setTimeout(()=>map.invalidateSize(),100);}
 function statusBase(item){if(item.status==='Vắng mặt')return 'Vắng mặt';if(String(item.status).includes('Đi trễ'))return 'Đi trễ';return 'Đúng giờ';}
-function applyFiltersAndSearch(){const q=$('search-input').value.toLocaleLowerCase('vi').trim(),f=$('filter-status').value;const rows=masterData.filter(x=>{const hay=[x.id,x.name,x.dept].join(' ').toLocaleLowerCase('vi');const matchText=hay.includes(q);const matchStatus=f==='ALL'||(f==='Cảnh báo'?!!x.warning:statusBase(x)===f);return matchText&&matchStatus;});$('table-count').textContent=rows.length+' dòng';if(!rows.length){$('table-body').innerHTML='<tr><td colspan="11" class="px-4 py-10 text-center text-slate-400">Không tìm thấy dữ liệu phù hợp</td></tr>';return;}$('table-body').innerHTML=rows.map(r=>{const status=statusBase(r),cls=status==='Vắng mặt'?'bg-rose-50 text-rose-700':status==='Đi trễ'?'bg-amber-50 text-amber-700':'bg-emerald-50 text-emerald-700';const photo=(id,url,label)=>(id||url)?`<button type="button" class="photo-link text-blue-600 underline" data-id="${esc(id||'')}" data-url="${esc(url||'')}" data-name="${esc(r.name+' - '+label)}">Xem ảnh</button>`:'<span class="text-slate-300">—</span>';return `<tr class="hover:bg-slate-50"><td class="whitespace-nowrap px-4 py-3 font-medium">${esc(r.id)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.name)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.dept)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.date)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeIn)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeOut)}</td><td class="px-4 py-3">${photo(r.photoInId,r.photoIn,'Ảnh vào')}</td><td class="px-4 py-3">${photo(r.photoOutId,r.photoOut,'Ảnh ra')}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.hours)}</td><td class="whitespace-nowrap px-4 py-3">${r.lat!=null?`<button class="text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.lat)},${Number(r.lng)})">Xem bản đồ</button><div class="text-xs text-slate-500">${esc(r.distance||'?')} m · ±${esc(r.accuracy||'?')} m</div>`:'—'}</td><td class="whitespace-nowrap px-4 py-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold ${cls}">${esc(r.status)}</span>${r.warning?`<p class="mt-1 max-w-xs text-xs text-amber-700" title="${esc(r.warning)}">${esc(r.warning)}</p>`:''}</td></tr>`;}).join('');}
+function applyFiltersAndSearch(){const q=$('search-input').value.toLocaleLowerCase('vi').trim(),f=$('filter-status').value;const rows=masterData.filter(x=>{const hay=[x.id,x.name,x.dept].join(' ').toLocaleLowerCase('vi');const matchText=hay.includes(q);const matchStatus=f==='ALL'||(f==='Cảnh báo'?!!x.warning:statusBase(x)===f);return matchText&&matchStatus;});$('table-count').textContent=rows.length+' dòng';if(!rows.length){$('table-body').innerHTML='<tr><td colspan="11" class="px-4 py-10 text-center text-slate-400">Không tìm thấy dữ liệu phù hợp</td></tr>';return;}$('table-body').innerHTML=rows.map(r=>{const status=statusBase(r),cls=status==='Vắng mặt'?'bg-rose-50 text-rose-700':status==='Đi trễ'?'bg-amber-50 text-amber-700':'bg-emerald-50 text-emerald-700';const photo=(id,url,label)=>(id||url)?`<button type="button" class="photo-link text-blue-600 underline" data-id="${esc(id||'')}" data-url="${esc(url||'')}" data-name="${esc(r.name+' - '+label)}">Xem ảnh</button>`:'<span class="text-slate-300">—</span>';return `<tr class="hover:bg-slate-50"><td class="whitespace-nowrap px-4 py-3 font-medium">${esc(r.id)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.name)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.dept)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.date)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeIn)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeOut)}</td><td class="px-4 py-3">${photo(r.photoInId,r.photoIn,'Ảnh vào')}</td><td class="px-4 py-3">${photo(r.photoOutId,r.photoOut,'Ảnh ra')}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.hours)}</td><td class="whitespace-nowrap px-4 py-3">${(r.latIn!=null||r.latOut!=null)?`<div>${r.latIn!=null?`<button class="text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.latIn)},${Number(r.lngIn)})">Vào: ${esc(r.distanceIn||'?')} m</button><div class="text-xs text-slate-500">±${esc(r.accuracyIn||'?')} m</div>`:''}${r.latOut!=null?`<button class="mt-1 text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.latOut)},${Number(r.lngOut)})">Ra: ${esc(r.distanceOut||'?')} m</button><div class="text-xs text-slate-500">±${esc(r.accuracyOut||'?')} m</div>`:''}</div>`:'—'}</td><td class="whitespace-nowrap px-4 py-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold ${cls}">${esc(r.status)}</span>${r.warning?`<p class="mt-1 max-w-xs text-xs text-amber-700" title="${esc(r.warning)}">${esc(r.warning)}</p>`:''}</td></tr>`;}).join('');}
 $('table-body').addEventListener('click',e=>{const b=e.target.closest('.photo-link');if(b)openImageModal(b.dataset.id,b.dataset.url,b.dataset.name);});
 function openImageModal(fileId,fallbackUrl,name){
  $('modal-title').textContent=name;$('modal-img').src='';$('image-modal').classList.remove('hidden');$('image-modal').classList.add('flex');
