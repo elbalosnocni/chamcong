@@ -56,23 +56,33 @@ function doPost(e) {
     else if (action === 'saveGeofence') result = saveGeofence(d.token, d.lat, d.lng, d.radius);
     else result = {success:false, ok:false, message:'API action không hợp lệ.'};
     return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><script>parent.postMessage({type:"DD_API_RESULT",nonce:' +
-      JSON.stringify(String(payload.nonce || '')) + ',result:' + JSON.stringify(result).replace(/</g,'\\\\u003c') +
+      JSON.stringify(String(payload.nonce || '')) + ',result:' + JSON.stringify(result).replace(/</g,'\\u003c') +
       '}, "*");</script>').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (err) {
     return HtmlService.createHtmlOutput('<!doctype html><script>parent.postMessage({type:"DD_API_RESULT",nonce:' +
       JSON.stringify(String(payload.nonce || '')) + ',result:{success:false,ok:false,message:' +
-      JSON.stringify(String(err)).replace(/</g,'\\\\u003c') + '}}, "*");</script>').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      JSON.stringify(String(err)).replace(/</g,'\\u003c') + '}}, "*");</script>').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 }
 
+function getAdminCredentials_() {
+  var props = PropertiesService.getScriptProperties();
+  return {
+    username: props.getProperty('ADMIN_USERNAME') || ADMIN_CONFIG.username,
+    password: props.getProperty('ADMIN_PASSWORD') || ADMIN_CONFIG.password
+  };
+}
+
 function checkAdminLogin(username, password) {
-  if (String(username || '').trim() === ADMIN_CONFIG.username && String(password || '') === ADMIN_CONFIG.password) {
+  var credentials = getAdminCredentials_();
+  if (String(username || '').trim() === credentials.username &&
+      String(password || '') === credentials.password) {
     var token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
     CacheService.getScriptCache().put('admin:' + token, '1', 21600);
     return { success: true, token: token };
   }
   Utilities.sleep(500);
-  return { success: false, message: "Sai tài khoản hoặc mật khẩu!" };
+  return { success: false, message: 'Sai tài khoản hoặc mật khẩu!' };
 }
 
 function isAdminTokenValid_(token) {
@@ -238,31 +248,36 @@ return { success: false, message: error.toString() };
 }
 }
 function parseDriveUrl_(cellValue) {
-let valStr = String(cellValue || '').trim();
-if (valStr.startsWith("=") || valStr.includes("HYPERLINK")) {
-let match = valStr.match(/HYPERLINK\s*(\s*"([^"]+)"/i);
-if (match && match[1]) return match[1];
+  var value = String(cellValue || '').trim();
+  if (!value) return '';
+
+  // Hỗ trợ công thức =HYPERLINK("URL", "nhãn") trong Google Sheets.
+  if (value.charAt(0) === '=' || /HYPERLINK/i.test(value)) {
+    var match = value.match(/HYPERLINK\s*\(\s*"([^"]+)"/i);
+    if (match && match[1]) return match[1];
+  }
+  return /^https?:\/\//i.test(value) ? value : '';
 }
-if (valStr.startsWith("http")) return valStr;
-return "";
-}
-function driveImageUrl_(cellValue) {
-var url = parseDriveUrl_(cellValue);
-if (!url) return '';
-var idMatch = url.match(/(?:id=|/d/)([A-Za-z0-9_-]+)/);
-return idMatch ? 'google.com' + idMatch[1] + '&sz=w1000' : url;
-}
+
 function driveFileId_(cellValue) {
-var url=parseDriveUrl_(cellValue), m=url.match(/(?:id=|/d/)([A-Za-z0-9_-]+)/);
-return m ? m[1] : '';
+  var url = parseDriveUrl_(cellValue);
+  if (!url) return '';
+  var match = url.match(/(?:[?&]id=|\/d\/|\/file\/d\/)([A-Za-z0-9_-]+)/);
+  return match ? match[1] : '';
 }
+
+function driveImageUrl_(cellValue) {
+  var id = driveFileId_(cellValue);
+  return id ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w1000' : '';
+}
+
 function getPhoto(token,fileId) {
 if(!isAdminTokenValid_(token)) return {success:false,message:'Phiên đăng nhập hết hạn.'};
 fileId=String(fileId||'');
 if(!/^[A-Za-z0-9_-]{10,}$/.test(fileId)) return {success:false,message:'Mã ảnh không hợp lệ.'};
 try {
 var blob=DriveApp.getFileById(fileId).getBlob(), mime=blob.getContentType();
-if(!/^image/(jpeg|png|webp)$/.test(mime)) return {success:false,message:'Tệp không phải ảnh hợp lệ.'};
+if (!/^image\/(jpeg|png|webp)$/.test(mime)) return {success:false,message:'Tệp không phải ảnh hợp lệ.'};
 return {success:true,dataUrl:'data:'+mime+';base64,'+Utilities.base64Encode(blob.getBytes())};
 } catch(err) { return {success:false,message:'Không đọc được ảnh. Kiểm tra quyền Drive.'}; }
 }
@@ -273,13 +288,15 @@ if (!sh) return out;
 var lastRow = sh.getLastRow();
 if (lastRow < 1) return out;
 var values = sh.getRange(1, 1, lastRow, 2).getValues();
-values.forEach(function(r){
-if(String(r[0]).trim() === 'GEOFENCE_LAT') out.lat = Number(r[1]);
-if(String(r[0]).trim() === 'GEOFENCE_LNG') out.lng = Number(r[1]);
-if(String(r[0]).trim() === 'GEOFENCE_RADIUS') out.radius = Number(r[1]) || 150;
+values.forEach(function(r) {
+  var key = String(r[0] || '').trim();
+  var raw = r[1];
+  if (key === 'GEOFENCE_LAT') out.lat = raw === '' || raw === null ? null : Number(raw);
+  if (key === 'GEOFENCE_LNG') out.lng = raw === '' || raw === null ? null : Number(raw);
+  if (key === 'GEOFENCE_RADIUS') out.radius = Number(raw) || 150;
 });
-if (!isFinite(out.lat) || out.lat === 0) out.lat = null;
-if (!isFinite(out.lng) || out.lng === 0) out.lng = null;
+if (out.lat === null || !isFinite(out.lat) || out.lat < -90 || out.lat > 90) out.lat = null;
+if (out.lng === null || !isFinite(out.lng) || out.lng < -180 || out.lng > 180) out.lng = null;
 return out;
 }
 function getPublicConfig(){
@@ -296,11 +313,21 @@ sh.clearContents(); // Sửa từ clear() sang clearContents để giữ định
 sh.getRange(1,1,3,2).setValues([['GEOFENCE_LAT',lat],['GEOFENCE_LNG',lng],['GEOFENCE_RADIUS',radius]]);
 return {success:true,message:'Đã lưu vị trí và bán kính điểm danh.',geofence:{lat:lat,lng:lng,radius:radius,enabled:true}};
 }
-function distanceMeters_(lat1,lon1,lat2,lon2) {
-var R=6371000,rad=Math.PI/180,dLat=(lat2-lat1)*rad,dLon=(lon2-lon1)*rad;
-var a=Math.sin(dLat/2)Math.sin(dLat/2)+Math.cos(lat1rad)Math.cos(lat2rad)Math.sin(dLon/2)Math.sin(dLon/2);
-return 2RMath.atan2(Math.sqrt(a),Math.sqrt(1-a));
+function distanceMeters_(lat1, lon1, lat2, lon2) {
+  var R = 6371000;
+  var rad = Math.PI / 180;
+  var phi1 = Number(lat1) * rad;
+  var phi2 = Number(lat2) * rad;
+  var dPhi = (Number(lat2) - Number(lat1)) * rad;
+  var dLambda = (Number(lon2) - Number(lon1)) * rad;
+  var sinPhi = Math.sin(dPhi / 2);
+  var sinLambda = Math.sin(dLambda / 2);
+  var a = sinPhi * sinPhi + Math.cos(phi1) * Math.cos(phi2) * sinLambda * sinLambda;
+  // Chặn sai số dấu phẩy động để sqrt(1-a) luôn hợp lệ.
+  a = Math.max(0, Math.min(1, a));
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
 function setup() {
 SpreadsheetApp.getActiveSpreadsheet().setSpreadsheetTimeZone(TZ);
 getLogSheet_();
@@ -386,7 +413,7 @@ var device = String(data.device || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40
 var age = Math.max(0, Math.min(Number(data.photoAgeSec) || 0, 31536000));
 var photo = String(data.photo || '');
 if (!code || !name) return { ok: false, message: 'Hãy nhập họ tên và mã nhân viên.' };
-var m = photo.match(/^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$/);
+var m = photo.match(/^data:image\/jpeg;base64,([A-Za-z0-9+\/=]+)$/);
 if (!m) return { ok: false, message: 'Chưa có ảnh selfie hợp lệ. Hãy chụp lại.' };
 if (m[1].length > 600000) return { ok: false, message: 'Ảnh quá lớn. Hãy chụp lại.' };
 var gps = data.location || {};
@@ -414,7 +441,7 @@ var now = new Date();
 var nowTxt = fmt_(now, 'HH:mm:ss');
 var today = fmt_(now, 'dd/MM/yyyy');
 var last = sh.getLastRow();
-var start = Math.max(2, last - 599);
+var start = 2;
 var rows = last >= 2 ? sh.getRange(start, 1, last - start + 1, HEADERS.length).getValues() : [];
 var idx = -1;
 for (var i = rows.length - 1; i >= 0; i--) {
@@ -490,4 +517,21 @@ return { ok: true, name: name, message: 'Đã ghi giờ ra lúc ' + nowTxt + '. 
 } finally {
 lock.releaseLock();
 }
+}
+
+/**
+ * Chạy thủ công một lần sau setup() để đổi thông tin đăng nhập quản trị.
+ * Sửa hai giá trị bên dưới trước khi chạy; không chia sẻ mật khẩu trong mã nguồn.
+ */
+function setAdminCredentials() {
+  var username = 'admin';
+  var password = 'THAY_BANG_MAT_KHAU_MOI_DAI_VA_KHO_DOAN';
+  if (!username || !password || password === 'THAY_BANG_MAT_KHAU_MOI_DAI_VA_KHO_DOAN' || password.length < 12) {
+    throw new Error('Hãy sửa username/password trong setAdminCredentials(); mật khẩu cần ít nhất 12 ký tự.');
+  }
+  PropertiesService.getScriptProperties().setProperties({
+    ADMIN_USERNAME: username,
+    ADMIN_PASSWORD: password
+  }, true);
+  return 'Đã cập nhật thông tin đăng nhập Admin trong Script Properties.';
 }
