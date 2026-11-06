@@ -557,9 +557,9 @@ lock.releaseLock();
  */
 function setAdminCredentials() {
   var username = 'admin';
-  var password = 'THAY_BANG_MAT_KHAU_MOI_DAI_VA_KHO_DOAN';
-  if (!username || !password || password === 'THAY_BANG_MAT_KHAU_MOI_DAI_VA_KHO_DOAN' || password.length < 12) {
-    throw new Error('Hãy sửa username/password trong setAdminCredentials(); mật khẩu cần ít nhất 12 ký tự.');
+  var password = 'Admin123';
+  if (!username || !password || password === 'THAY_BANG_MAT_KHAU_MOI_DAI_VA_KHO_DOAN' || password.length < 6) {
+    throw new Error('Hãy sửa username/password trong setAdminCredentials(); mật khẩu cần ít nhất 6 ký tự.');
   }
   PropertiesService.getScriptProperties().setProperties({
     ADMIN_USERNAME: username,
