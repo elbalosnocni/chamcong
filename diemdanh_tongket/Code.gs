@@ -330,7 +330,9 @@ var nowTxt = fmt_(now, 'HH:mm:ss');
 var today = fmt_(now, 'dd/MM/yyyy');
 var last = sh.getLastRow();
 var start = Math.max(2, last - 599);
-var rows = last >= 2 ? sh.getRange(start, 1, last - start + 1, HEADERS.length).getValues() :;
+var rows = last >= 2
+  ? sh.getRange(start, 1, last - start + 1, HEADERS.length).getValues()
+  : [];
 var idx = -1;
 for (var i = rows.length - 1; i >= 0; i--) {
 if (String(rows[i][C.CODE - 1]).toUpperCase() === code) { idx = i; break; }
@@ -351,7 +353,7 @@ return { ok: false, message: 'Bạn đã vào ca lúc ' + fmt_(prevIn, 'HH:mm') 
 if (isOut && !open && prevIn && prevOut && (now - prevOut) / 3600000 < 2) {
 return { ok: false, message: 'Bạn đã ra ca lúc ' + fmt_(prevOut, 'HH:mm') + '. Không cần điểm danh ra ca lần nữa.' };
 }
-var warns =;
+var warns = [];
 if (age > STALE_SECONDS) warns.push((isOut ? 'Ảnh ra' : 'Ảnh vào') + ' cũ ' + Math.round(age / 60) + ' phút');
 if (device) {
 var others = {};
