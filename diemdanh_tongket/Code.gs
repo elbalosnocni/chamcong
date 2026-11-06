@@ -105,6 +105,7 @@ function getAdminDashboardData(token, targetDateStr) {
     let countIn = 0;
     let countOut = 0;
     let countWarn = 0;
+    let countLate = 0; // Tổng số nhân viên đi trễ trong ngày được chọn
     
     if (sheetDD) {
       let lastRowDD = sheetDD.getLastRow();
