@@ -11,6 +11,7 @@ var STALE_SECONDS = 180;           // Ảnh chụp cũ hơn mức này bị gắ
 var MIN_GAP_SECONDS = 60;          // Chặn bấm gửi trùng trong khoảng này
 var MAX_SHIFT_HOURS = 16;          // Ca dài tối đa
 var BREAK_MINUTES = 0;             // Phút nghỉ trừ khỏi mỗi ca
+var SHIFT_START_TIME = '08:00';
 
 // Chỉ số cột cấu hình (Bắt đầu từ 1)
 var C = { DATE: 1, CODE: 2, NAME: 3, IN: 4, OUT: 5, HOURS: 6, PHOTO_IN: 7, PHOTO_OUT: 8, WARN: 9, DEV_IN: 10, DEV_OUT: 11 };
@@ -19,7 +20,7 @@ var HEADERS = ['Ngày', 'Mã NV', 'Họ tên', 'Giờ vào', 'Giờ ra', 'Số g
 // Cấu hình tài khoản đăng nhập Admin Dashboard
 const ADMIN_CONFIG = {
   username: "admin",
-  password: "AdminPassword123" // Hãy chủ động thay đổi mật khẩu an toàn hơn tại đây
+  password: "Admin123" // Hãy chủ động thay đổi mật khẩu an toàn hơn tại đây
 };
 
 /**
@@ -157,7 +158,14 @@ function getAdminDashboardData(token, targetDateStr) {
             let warningText = String(row[C.WARN - 1] || "").trim();
             let status = "Đúng giờ";
             if (row[C.IN - 1] instanceof Date) {
-              var actualMinutes = row[C.IN - 1].getHours() * 60 + row[C.IN - 1].getMinutes();
+              var timeParts = Utilities.formatDate(
+                row[C.IN - 1],
+                TZ,
+                "HH:mm"
+              ).split(':');
+
+              var actualMinutes =
+                Number(timeParts[0]) * 60 + Number(timeParts[1]);
               var shiftParts = SHIFT_START_TIME.split(':');
               var shiftMinutes = Number(shiftParts[0]) * 60 + Number(shiftParts[1]);
               if (actualMinutes > shiftMinutes) { status = "Đi trễ"; countLate++; }
