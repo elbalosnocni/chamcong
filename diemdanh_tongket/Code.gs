@@ -110,9 +110,10 @@ function getAdminDashboardData(token, targetDateStr) {
     if (sheetDD) {
       let lastRowDD = sheetDD.getLastRow();
       if (lastRowDD >= 2) {
-        let ddData = sheetDD.getRange(2, 1, lastRowDD - 1, HEADERS.length).getValues();
-        
-        ddData.forEach(row => {
+        let ddRange = sheetDD.getRange(2, 1, lastRowDD - 1, HEADERS.length);
+        let ddData = ddRange.getValues();
+        let ddFormulas = ddRange.getFormulas();
+        ddData.forEach((row, ddIndex) => {
           let rowDateObj = row[C.DATE - 1];
           if (!rowDateObj) return;
           
