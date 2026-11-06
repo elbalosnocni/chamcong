@@ -51,17 +51,28 @@ function doGet(e) {
  * Xác thực thông tin đăng nhập Admin
  */
 function checkAdminLogin(username, password) {
-  if (username === ADMIN_CONFIG.username && password === ADMIN_CONFIG.password) {
-    return { success: true, token: Utilities.base64Encode(username + ":" + password) };
+  if (String(username || '') === ADMIN_CONFIG.username && String(password || '') === ADMIN_CONFIG.password) {
+    var token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
+    CacheService.getScriptCache().put('admin:' + token, '1', 21600);
+    return { success: true, token: token };
   }
+  Utilities.sleep(500);
   return { success: false, message: "Sai tài khoản hoặc mật khẩu!" };
+}
+function isAdminTokenValid_(token) {
+  return !!token && CacheService.getScriptCache().get('admin:' + String(token)) === '1';
+}
+function logoutAdmin(token) {
+  if (token) CacheService.getScriptCache().remove('admin:' + String(token));
+  return { success: true };
 }
 
 /**
  * API Lấy dữ liệu báo cáo tích hợp cho trang quản trị Admin
  * Tối ưu hóa đọc mảng, phân tích trạng thái Vào/Ra/Vắng/Cảnh báo từ cấu trúc thực tế
  */
-function getAdminDashboardData(targetDateStr) {
+function getAdminDashboardData(token, targetDateStr) {
+  if (!isAdminTokenValid_(token)) return { success: false, message: "Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại." };
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheetDD = ss.getSheetByName(SHEET_LOG); // Khớp chuẩn xác tên SHEET_LOG ('ChamCong')
@@ -138,13 +149,21 @@ function getAdminDashboardData(targetDateStr) {
             }
             
             // Phân tách lấy URL ảnh từ cấu trúc ô dữ liệu
-            photoInUrl = parseDriveUrl_(row[C.PHOTO_IN - 1]);
-            photoOutUrl = parseDriveUrl_(row[C.PHOTO_OUT - 1]);
+            photoInUrl = driveImageUrl_(ddFormulas[ddIndex][C.PHOTO_IN - 1] || row[C.PHOTO_IN - 1]);
+            photoOutUrl = driveImageUrl_(ddFormulas[ddIndex][C.PHOTO_OUT - 1] || row[C.PHOTO_OUT - 1]);
             
             let warningText = String(row[C.WARN - 1] || "").trim();
-            let status = "Đang trong ca";
+            let status = "Đúng giờ";
+            if (row[C.IN - 1] instanceof Date) {
+              var actualMinutes = row[C.IN - 1].getHours() * 60 + row[C.IN - 1].getMinutes();
+              var shiftParts = SHIFT_START_TIME.split(':');
+              var shiftMinutes = Number(shiftParts[0]) * 60 + Number(shiftParts[1]);
+              if (actualMinutes > shiftMinutes) { status = "Đi trễ"; countLate++; }
+            } else { status = "Thiếu giờ vào"; }
             if (row[C.OUT - 1] instanceof Date) {
-              status = "Đã ra ca";
+              status += " · Đã ra ca";
+            } else if (row[C.IN - 1] instanceof Date) {
+              status += " · Đang trong ca";
             }
             if (warningText) {
               countWarn++;
@@ -197,7 +216,8 @@ function getAdminDashboardData(targetDateStr) {
       summary: {
         totalEmployees: totalStaff || checkedInCodes.size,
         totalCheckedIn: checkedInCodes.size,
-        totalInCa: countIn - countOut,
+        totalInCa: Math.max(0, countIn - countOut),
+        totalLate: countLate,
         totalAbsent: absentCount,
         totalWarning: countWarn
       },
@@ -213,13 +233,19 @@ function getAdminDashboardData(targetDateStr) {
  * Hàm bổ trợ bóc tách URL từ công thức ô tính của Google Sheet dạng `=HYPERLINK("url","text")`
  */
 function parseDriveUrl_(cellValue) {
-  let valStr = String(cellValue).trim();
+  let valStr = String(cellValue || '').trim();
   if (valStr.startsWith("=") || valStr.includes("HYPERLINK")) {
-    let match = valStr.match(/"([^"]+)"/);
+    let match = valStr.match(/HYPERLINK\s*\(\s*"([^"]+)"/i);
     if (match && match[1]) return match[1];
   }
   if (valStr.startsWith("http")) return valStr;
   return "";
+}
+function driveImageUrl_(cellValue) {
+  var url = parseDriveUrl_(cellValue);
+  if (!url) return '';
+  var idMatch = url.match(/(?:id=|\/d\/)([A-Za-z0-9_-]+)/);
+  return idMatch ? 'https://drive.google.com/thumbnail?id=' + idMatch[1] + '&sz=w1000' : url;
 }
 
 /** Chạy một lần từ trình soạn thảo để cấp quyền và tạo sẵn sheet, thư mục. */
@@ -313,7 +339,7 @@ var device = String(data.device || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40
 var age = Math.max(0, Math.min(Number(data.photoAgeSec) || 0, 31536000));
 var photo = String(data.photo || '');
 if (!code || !name) return { ok: false, message: 'Hãy nhập họ tên và mã nhân viên.' };
-var m = photo.match(/^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$/);
+var m = photo.match(/^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/);
 if (!m) return { ok: false, message: 'Chưa có ảnh selfie hợp lệ. Hãy chụp lại.' };
 if (m[1].length > 600000) return { ok: false, message: 'Ảnh quá lớn. Hãy chụp lại.' };
 var map = staffMap_();
@@ -330,9 +356,7 @@ var nowTxt = fmt_(now, 'HH:mm:ss');
 var today = fmt_(now, 'dd/MM/yyyy');
 var last = sh.getLastRow();
 var start = Math.max(2, last - 599);
-var rows = last >= 2
-  ? sh.getRange(start, 1, last - start + 1, HEADERS.length).getValues()
-  : [];
+var rows = last >= 2 ? sh.getRange(start, 1, last - start + 1, HEADERS.length).getValues() : [];
 var idx = -1;
 for (var i = rows.length - 1; i >= 0; i--) {
 if (String(rows[i][C.CODE - 1]).toUpperCase() === code) { idx = i; break; }
