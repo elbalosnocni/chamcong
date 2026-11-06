@@ -19,6 +19,21 @@ var BREAK_MINUTES = 0;             // phút nghỉ trừ khỏi mỗi ca (ví d�
 var C = { DATE: 1, CODE: 2, NAME: 3, IN: 4, OUT: 5, HOURS: 6, PHOTO_IN: 7, PHOTO_OUT: 8, WARN: 9, DEV_IN: 10, DEV_OUT: 11 };
 var HEADERS = ['Ngày', 'Mã NV', 'Họ tên', 'Giờ vào', 'Giờ ra', 'Số giờ', 'Ảnh vào', 'Ảnh ra', 'Cảnh báo', 'Thiết bị vào', 'Thiết bị ra'];
 
+// Cấu hình tài khoản Admin mặc định (Bạn có thể đổi lại tùy ý)
+const ADMIN_CONFIG = {
+  username: "admin",
+  password: "AdminPassword123" // Thay đổi mật khẩu bảo mật hơn tại đây
+};
+
+// Cấu hình tên các Sheet dữ liệu hiện tại của bạn
+const SHEET_NAMES = {
+  DIEM_DANH: "DiemDanh", // Tên sheet lưu lịch sử điểm danh (chứa Giờ, Mã NV, Tên, Phòng ban, Selfie...)
+  NHAN_VIEN: "NhanVien"  // Tên sheet danh sách nhân viên để đối chiếu vắng mặt
+};
+
+/**
+ * Hàm điều hướng hiển thị Giao diện (Web App)
+ */
 /** Mở trang web. Thêm ?view=qr vào đường dẫn để mở trang in mã QR. */
 function doGet(e) {
   var view = e && e.parameter && e.parameter.view;
@@ -30,7 +45,141 @@ function doGet(e) {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
+// Nếu yêu cầu trang quản trị, trả về giao diện Admin Dashboard
+  if (e.parameter.page === 'admin') {
+    return HtmlService.createTemplateFromFile('Admin')
+        .evaluate()
+        .setTitle('Hệ Thống Quản Trị Điểm Danh QR')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+  
+  // Mặc định giữ nguyên giao diện điểm danh cũ (Index.html) của bạn
+  return HtmlService.createTemplateFromFile('Index')
+      .evaluate()
+      .setTitle('Điểm Danh QR Code')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
 
+/**
+ * Hàm kiểm tra đăng nhập Admin bảo mật
+ */
+function checkAdminLogin(username, password) {
+  if (username === ADMIN_CONFIG.username && password === ADMIN_CONFIG.password) {
+    return { success: true, token: Utilities.base64Encode(username + ":" + password) };
+  }
+  return { success: false, message: "Sai tài khoản hoặc mật khẩu!" };
+}
+
+/**
+ * API Lấy toàn bộ dữ liệu thống kê cho Dashboard nâng cấp
+ */
+function getAdminDashboardData(targetDateStr) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetDD = ss.getSheetByName(SHEET_NAMES.DIEM_DANH);
+    const sheetNV = ss.getSheetByName(SHEET_NAMES.NHAN_VIEN);
+    
+    // Xử lý ngày lọc (Mặc định là hôm nay nếu không truyền)
+    let targetDate = targetDateStr ? new Date(targetDateStr) : new Date();
+    targetDate.setHours(0,0,0,0);
+    
+    // 1. Lấy danh sách toàn bộ nhân viên hoạt động
+    let allEmployees = [];
+    if (sheetNV) {
+      const nvData = sheetNV.getDataRange().getValues();
+      // Giả định: Dòng 1 tiêu đề. Cột 0: Mã NV, Cột 1: Họ Tên, Cột 2: Phòng ban
+      for(let i = 1; i < nvData.length; i++) {
+        if(nvData[i][0]) {
+          allEmployees.push({
+            id: nvData[i][0].toString(),
+            name: nvData[i][1],
+            dept: nvData[i][2]
+          });
+        }
+      }
+    }
+    
+    // 2. Lấy dữ liệu điểm danh lịch sử
+    const ddData = sheetDD.getDataRange().getValues();
+    const headers = ddData[0];
+    
+    // Xác định chỉ số cột tự động dựa trên tiêu đề cũ của bạn
+    const idxTime = headers.findIndex(h => h.toString().toLowerCase().includes('giờ') || h.toString().toLowerCase().includes('timestamp'));
+    const idxId = headers.findIndex(h => h.toString().toLowerCase().includes('mã') || h.toString().toLowerCase().includes('id'));
+    const idxName = headers.findIndex(h => h.toString().toLowerCase().includes('tên') || h.toString().toLowerCase().includes('name'));
+    const idxDept = headers.findIndex(h => h.toString().toLowerCase().includes('phòng') || h.toString().toLowerCase().includes('bộ phận'));
+    const idxSelfie = headers.findIndex(h => h.toString().toLowerCase().includes('ảnh') || h.toString().toLowerCase().includes('selfie') || h.toString().toLowerCase().includes('image'));
+    const idxStatus = headers.findIndex(h => h.toString().toLowerCase().includes('trạng thái') || h.toString().toLowerCase().includes('status'));
+
+    let checkedInIds = new Set();
+    let records = [];
+    let countLate = 0;
+    
+    for (let i = 1; i < ddData.length; i++) {
+      let row = ddData[i];
+      if (!row[idxId]) continue;
+      
+      let logTime = new Date(row[idxTime]);
+      let logDate = new Date(logTime.getTime());
+      logDate.setHours(0,0,0,0);
+      
+      // Chỉ lọc dữ liệu của ngày được chọn
+      if (logDate.getTime() === targetDate.getTime()) {
+        let empId = row[idxId].toString();
+        checkedInIds.add(empId);
+        
+        let isLate = false;
+        if (idxStatus !== -1 && row[idxStatus].toString().toLowerCase().includes('trễ')) {
+          isLate = true;
+          countLate++;
+        }
+        
+        records.push({
+          time: Utilities.formatDate(logTime, Session.getScriptTimeZone(), "HH:mm:ss"),
+          date: Utilities.formatDate(logTime, Session.getScriptTimeZone(), "yyyy-MM-dd"),
+          id: empId,
+          name: idxName !== -1 ? row[idxName] : "",
+          dept: idxDept !== -1 ? row[idxDept] : "",
+          selfie: idxSelfie !== -1 ? row[idxSelfie] : "",
+          status: idxStatus !== -1 ? row[idxStatus] : (isLate ? "Đi trễ" : "Hợp lệ")
+        });
+      }
+    }
+    
+    // 3. Tính toán số liệu vắng mặt từ danh sách nhân viên gốc
+    let missingRecords = [];
+    allEmployees.forEach(emp => {
+      if (!checkedInIds.has(emp.id)) {
+        missingRecords.push({
+          time: "--:--:--",
+          date: targetDateStr || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd"),
+          id: emp.id,
+          name: emp.name,
+          dept: emp.dept,
+          selfie: "",
+          status: "Vắng mặt"
+        });
+      }
+    });
+    
+    // Gộp chung để hiển thị danh sách tổng hợp trực quan
+    let fullReportList = records.concat(missingRecords);
+    
+    return {
+      success: true,
+      summary: {
+        totalEmployees: allEmployees.length || (checkedInIds.size + missingRecords.length),
+        totalCheckedIn: checkedInIds.size,
+        totalLate: countLate,
+        totalAbsent: missingRecords.length
+      },
+      detailRecords: fullReportList
+    };
+    
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
 /** Chạy một lần từ trình soạn thảo để cấp quyền và tạo sẵn sheet, thư mục. */
 function setup() {
   SpreadsheetApp.getActiveSpreadsheet().setSpreadsheetTimeZone(TZ);
