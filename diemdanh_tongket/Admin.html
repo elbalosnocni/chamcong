@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Dashboard - Điểm Danh QR</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Dùng TailwindCSS để thiết kế giao diện sang trọng, responsive không cần file CSS ngoài -->
+  <script src="https://tailwindcss.com"></script>
+  <!-- FontAwesome để vẽ các icon trực quan -->
+  <link rel="stylesheet" href="https://cloudflare.com">
+  <style>
+    .modal { transition: opacity 0.25s ease; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen">
+
+  <!-- ================= MÀN HÌNH ĐĂNG NHẬP (LOGIN AREA) ================= -->
+  <div id="login-container" class="flex items-center justify-center min-h-screen px-4">
+    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100">
+      <div class="text-center mb-6">
+        <div class="bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center text-2xl mx-auto shadow-md mb-3">
+          <i class="fa-solid fa-lock"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-900">Quản Trị Hệ Thống</h2>
+        <p class="text-sm text-gray-500 mt-1">Vui lòng đăng nhập để xem dữ liệu</p>
+      </div>
+      
+      <div id="login-error" class="hidden mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200"></div>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">Tài khoản</label>
+          <input type="text" id="username" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">Mật khẩu</label>
+          <input type="password" id="password" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition text-sm">
+        </div>
+        <button onclick="handleLogin()" id="btn-login" class="w-full py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 active:scale-95 transition shadow-lg shadow-blue-600/20 text-sm">
+          Đăng Nhập <i class="fa-solid fa-arrow-right ml-1"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= GIAO DIỆN QUẢN TRỊ CHÍNH (MAIN DASHBOARD) ================= -->
+  <div id="dashboard-container" class="hidden">
+    <!-- Thanh điều hướng phía trên (Top Nav) -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-2 rounded-xl shadow">
+            <i class="fa-solid fa-chart-pie text-lg px-0.5"></i>
+          </div>
+          <span class="text-lg font-bold text-gray-900 tracking-tight">QR Attendance Admin</span>
+        </div>
+        <button onclick="handleLogout()" class="px-3.5 py-1.5 border border-gray-300 text-gray-600 hover:text-red-600 hover:border-red-200 rounded-xl text-sm font-medium transition flex items-center space-x-1.5">
+          <i class="fa-solid fa-right-from-bracket"></i> <span>Đăng xuất</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <!-- Bộ lọc nhanh (Filters) -->
+      <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Xem dữ liệu ngày</label>
+            <input type="date" id="filter-date" onchange="loadDashboardData()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-700">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Tìm kiếm nhanh</label>
+            <input type="text" id="search-input" oninput="applyFiltersAndSearch()" placeholder="Mã NV, Họ tên, Phòng ban..." class="border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none w-64 text-gray-700">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Lọc trạng thái</label>
+            <select id="filter-status" onchange="applyFiltersAndSearch()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-700">
+              <option value="ALL">Tất cả trạng thái</option>
+              <option value="Hợp lệ">Đi học/Đi làm đúng giờ</option>
+              <option value="Trễ">Đi trễ</option>
+              <option value="Vắng mặt">Vắng mặt</option>
+            </select>
+          </div>
+        </div>
+        
+        <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2.5 rounded-xl text-sm transition shadow-md shadow-emerald-600/10 flex items-center space-x-2 self-end md:self-auto">
+          <i class="fa-solid fa-file-excel"></i> <span>Xuất Excel</span>
+        </button>
+      </div>
+
+      <!-- Khối đếm số lượng (Dashboard Cards Summary) -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center space-x-4">
+          <div class="p-3 bg-blue-50 text-blue-600 rounded-xl text-xl"><i class="fa-solid fa-users"></i></div>
+          <div>
+            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Tổng nhân sự</p>
+            <h3 id="stat-total" class="text-2xl font-bold text-gray-900 mt-0.5">0</h3>
+          </div>
+        </div>
+        <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center space-x-4">
+          <div class="p-3 bg-emerald-50 text-emerald-600 rounded-xl text-xl"><i class="fa-solid fa-circle-check"></i></div>
+          <div>
+            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Đã điểm danh</p>
+            <h3 id="stat-present" class="text-2xl font-bold text-gray-900 mt-0.5">0</h3>
+          </div>
+        </div>
+        <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center space-x-4">
+          <div class="p-3 bg-amber-50 text-amber-600 rounded-xl text-xl"><i class="fa-solid fa-clock"></i></div>
+          <div>
+            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Đi trễ</p>
+            <h3 id="stat-late" class="text-2xl font-bold text-gray-900 mt-0.5">0</h3>
+          </div>
+        </div>
+        <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center space-x-4">
+          <div class="p-3 bg-rose-50 text-rose-600 rounded-xl text-xl"><i class="fa-solid fa-circle-xmark"></i></div>
+          <div>
+            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Vắng mặt</p>
+            <h3 id="stat-absent" class="text-2xl font-bold text-gray-900 mt-0.5">0</h3>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bảng danh sách chi tiết (Data Table) -->
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 class="font-bold text-gray-900 flex items-center space-x-1.5">
+            <span>Chi Tiết Lượt Điểm Danh</span>
+            <span id="loading-spinner" class="hidden text-gray-400 animate-spin text-sm"><i class="fa-solid fa-spinner"></i></span>
+          </h3>
+          <span id="table-count" class="text-xs font-medium bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">Hiển thị: 0 dòng</span>
+        </div>
+        
+        <div class="overflow-x-auto w-full">
+          <table class="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr class="bg-gray-50/70 border-b border-gray-200 text-gray-600 font-semibold">
+                <th class="py-3 px-5">Mã NV</th>
+                <th class="py-3 px-5">Họ Và Tên</th>
+                <th class="py-3 px-5">Phòng Ban</th>
+                <th class="py-3 px-5">Ngày</th>
+                <th class="py-3 px-5">Giờ Vào/Ra</th>
+                <th class="py-3 px-5 text-center">Ảnh Selfie</th>
+                <th class="py-3 px-5 text-center">Trạng Thái</th>
+              </tr>
+            </thead>
+            <tbody id="table-body" class="divide-y divide-gray-100 text-gray-700">
+              <tr>
+                <td colspan="7" class="py-8 text-center text-gray-400"><i class="fa-solid fa-folder-open text-2xl mb-1 block"></i> Chưa có dữ liệu hoặc vui lòng bấm tìm kiếm.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ================= MODAL XEM ẢNH PHÓNG TO (PREVIEW MODAL) ================= -->
+  <div id="image-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+    <div class="modal-overlay absolute w-full h-full bg-black/60 backdrop-blur-sm" onclick="closeImageModal()"></div>
+    <div class="bg-white w-11/12 max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-gray-100 transform scale-95 transition-transform duration-300">
+      <div class="flex items-center justify-between p-4 border-b border-gray-100">
+        <h4 id="modal-title" class="font-bold text-gray-900 text-sm">Ảnh xác thực selfie</h4>
+// Biến lưu trữ cục bộ dữ liệu gốc trả về từ server để tiện tìm kiếm/lọc phía Client cực nhanh
+let masterData = [];
+// Tự động gán ngày hôm nay vào ô input date khi tải trang
+window.onload = function() {
+const today = new Date().toISOString().split('T')[0];
+document.getElementById('filter-date').value = today;
+// Nếu đã có token đăng nhập cũ trong phiên làm việc, tự động khôi phục giao diện
+if(sessionStorage.getItem('adminToken')) {
+document.getElementById('login-container').classList.add('hidden');
+document.getElementById('dashboard-container').classList.remove('hidden');
+loadDashboardData();
+}
+};
+/** Xử lý đăng nhập */
+function handleLogin() {
+const user = document.getElementById('username').value.trim();
+const pass = document.getElementById('password').value.trim();
+const errDiv = document.getElementById('login-error');
+const btn = document.getElementById('btn-login');
+if(!user || !pass) {
+errDiv.innerText = "Vui lòng nhập đầy đủ thông tin!";
+errDiv.classList.remove('hidden');
+return;
+}
+btn.disabled = true;
+btn.innerHTML = <i class="fa-solid fa-spinner animate-spin mr-1"></i> Đang xác thực...;
+google.script.run
+.withSuccessHandler(function(response) {
+btn.disabled = false;
+btn.innerHTML = Đăng Nhập <i class="fa-solid fa-arrow-right ml-1"></i>;
+if(response.success) {
+sessionStorage.setItem('adminToken', response.token);
+errDiv.classList.add('hidden');
+document.getElementById('login-container').classList.add('hidden');
+document.getElementById('dashboard-container').classList.remove('hidden');
+loadDashboardData();
+} else {
+errDiv.innerText = response.message;
+errDiv.classList.remove('hidden');
+}
+})
+.withFailureHandler(function(err) {
+btn.disabled = false;
+btn.innerHTML = Đăng Nhập <i class="fa-solid fa-arrow-right ml-1"></i>;
+errDiv.innerText = "Lỗi kết nối Server: " + err.toString();
+errDiv.classList.remove('hidden');
+})
+.checkAdminLogin(user, pass);
+}
+/** Đăng xuất */
+function handleLogout() {
+sessionStorage.removeItem('adminToken');
+document.getElementById('dashboard-container').classList.add('hidden');
+document.getElementById('login-container').classList.remove('hidden');
+document.getElementById('username').value = "";
+document.getElementById('password').value = "";
+}
+/** Gọi hàm lấy dữ liệu từ Google Sheet đổ lên Dashboard */
+function loadDashboardData() {
+const selectedDate = document.getElementById('filter-date').value;
+const spinner = document.getElementById('loading-spinner');
+spinner.classList.remove('hidden');
+google.script.run
+.withSuccessHandler(function(res) {
+spinner.classList.add('hidden');
+if(res.success) {
+// Cập nhật số liệu thống kê đầu não
+document.getElementById('stat-total').innerText = res.summary.totalEmployees;
+document.getElementById('stat-present').innerText = res.summary.totalCheckedIn;
+document.getElementById('stat-late').innerText = res.summary.totalLate;
+document.getElementById('stat-absent').innerText = res.summary.totalAbsent;
+// Lưu dữ liệu vào biến master và render ra bảng
+masterData = res.detailRecords;
+applyFiltersAndSearch();
+} else {
+alert("Không thể tải dữ liệu: " + res.message);
+}
+})
+.withFailureHandler(function(err) {
+spinner.classList.add('hidden');
+alert("Lỗi máy chủ: " + err.toString());
+})
+.getAdminDashboardData(selectedDate);
+}
+/** Hàm lọc dữ liệu kết hợp Ô Tìm kiếm + Hộp Chọn Trạng thái nhanh */
+function applyFiltersAndSearch() {
+const searchKey = document.getElementById('search-input').value.toLowerCase().trim();
+const statusFilter = document.getElementById('filter-status').value;
+const tbody = document.getElementById('table-body');
+// Lọc mảng dữ liệu dựa trên tiêu chí
+let filtered = masterData.filter(item => {
+const matchesSearch = item.id.toLowerCase().includes(searchKey) ||
+item.name.toLowerCase().includes(searchKey) ||
+item.dept.toLowerCase().includes(searchKey);
+let matchesStatus = true;
+if (statusFilter !== 'ALL') {
+if (statusFilter === 'Trễ') {
+matchesStatus = item.status.toLowerCase().includes('trễ');
+} else {
+matchesStatus = item.status === statusFilter;
+}
+}
+return matchesSearch && matchesStatus;
+});
+document.getElementById('table-count').innerText = Hiển thị: ${filtered.length} dòng;
+// Vẽ lại bảng HTML dữ liệu công nhân viên
+if(filtered.length === 0) {
+tbody.innerHTML = <tr><td colspan="7" class="py-8 text-center text-gray-400"><i class="fa-solid fa-magnifying-glass text-2xl mb-1 block"></i> Không tìm thấy kết quả phù hợp</td></tr>;
+return;
+}
+let html = "";
+filtered.forEach(row => {
+// Thiết kế badge trạng thái đẹp mắt
+let statusBadge = <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Đúng giờ</span>;
+if (row.status.toLowerCase().includes('trễ')) {
+statusBadge = <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-50 text-amber-700 border border-amber-200">${row.status}</span>;
+} else if (row.status === 'Vắng mặt') {
+statusBadge = <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-50 text-rose-700 border border-rose-200">Vắng mặt</span>;
+}
+// Thiết kế hiển thị xem thử ảnh Selfie dạng Thumbnail nhỏ gọn
+let selfieHtml = <span class="text-gray-300 text-xs italic">Không có ảnh</span>;
+if(row.selfie && (row.selfie.startsWith('http') || row.selfie.length > 30)) {
+selfieHtml = <button onclick="openImageModal('${row.selfie}', '${row.name}')" class="group relative inline-block focus:outline-none"> <img src="${row.selfie}" class="w-10 h-10 object-cover rounded-lg border border-gray-200 group-hover:opacity-80 shadow-sm transition"> <span class="absolute -bottom-1 -right-1 bg-black/50 text-white rounded-full w-4 h-4 flex items-center justify-center text-[9px]"><i class="fa-solid fa-expand"></i></span> </button>;
+}
+html += `
+${row.id}
+${row.name}
+${row.dept}
+${row.date}
+${row.time}
+${selfieHtml}
+${statusBadge}
+`;
+});
+tbody.innerHTML = html;
+}
+/** Điều khiển mở Modal phóng to ảnh selfie xem nét hơn */
+function openImageModal(url, name) {
+document.getElementById('modal-title').innerText = Ảnh xác thực selfie - ${name};
+document.getElementById('modal-img').src = url;
+const modal = document.getElementById('image-modal');
+modal.classList.remove('pointer-events-none', 'opacity-0');
+modal.querySelector('.bg-white').classList.remove('scale-95');
+modal.querySelector('.bg-white').classList.add('scale-100');
+}
+function closeImageModal() {
+const modal = document.getElementById('image-modal');
+modal.classList.add('pointer-events-none', 'opacity-0');
+modal.querySelector('.bg-white').classList.remove('scale-100');
+modal.querySelector('.bg-white').classList.add('scale-95');
+}
+/** Tự động sinh file dữ liệu và tải xuống dưới định dạng CSV/Excel tiện lợi */
+function exportToExcel() {
+if(masterData.length === 0) {
+alert("Không có dữ liệu hiện tại để xuất file!");
+return;
+}
+const searchKey = document.getElementById('search-input').value.toLowerCase().trim();
+const statusFilter = document.getElementById('filter-status').value;
+let filtered = masterData.filter(item => {
+const matchesSearch = item.id.toLowerCase().includes(searchKey) || item.name.toLowerCase().includes(searchKey) || item.dept.toLowerCase().includes(searchKey);
+let matchesStatus = true;
+if (statusFilter !== 'ALL') {
+matchesStatus = statusFilter === 'Trễ' ? item.status.toLowerCase().includes('trễ') : item.status === statusFilter;
+}
+return matchesSearch && matchesStatus;
+});
+// Tạo cấu trúc dữ liệu CSV chuẩn UTF-8 có dấu tiếng Việt
+let csvContent = "\uFEFF"; // BOM hỗ trợ hiển thị tiếng Việt trên Excel không lỗi font
+csvContent += "Mã Nhân Viên,Họ và Tên,Phòng Ban,Ngày Lọc,Giờ Vào/Ra,Trạng Thái,Đường Dẫn Ảnh Selfie\n";
+filtered.forEach(r => {
+csvContent += "${r.id}","${r.name}","${r.dept}","${r.date}","${r.time}","${r.status}","${r.selfie}"\n;
+});
+const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+const link = document.createElement("a");
+const dateStr = document.getElementById('filter-date').value;
+link.href = URL.createObjectURL(blob);
+link.setAttribute("download", BaoCao_DiemDanh_${dateStr}.csv);
+document.body.appendChild(link);
+link.click();
+document.body.removeChild(link);
+}
