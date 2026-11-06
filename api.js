@@ -1,4 +1,3 @@
-
 (function(){
   const endpoint = window.ATTENDANCE_API_URL || '';
   function ensureEndpoint(){
@@ -30,16 +29,14 @@
       input.value=JSON.stringify({action,data:data||{},nonce});form.appendChild(input);
       const timer=setTimeout(()=>{cleanup();reject(new Error('Hết thời gian chờ phản hồi từ máy chủ.'));},60000);
       function cleanup(){clearTimeout(timer);window.removeEventListener('message',onMessage);form.remove();iframe.remove();}
-      // Tìm đoạn này trong mã nguồn javascript của bạn (Ứng với File)
+      
+      // Hàm onMessage đã loại bỏ kiểm tra ev.source để tránh lỗi rớt gói tin trên browser bảo mật
       function onMessage(ev){
-        // Nới lỏng kiểm tra ev.source để tránh bị trình duyệt drop block context
         if(!ev.data || ev.data.type !== 'DD_API_RESULT' || ev.data.nonce !== nonce) return;
-        
         cleanup();
         resolve(ev.data.result);
       }
-
-      }
+      
       window.addEventListener('message',onMessage);
       document.body.appendChild(iframe);document.body.appendChild(form);form.submit();
     });
