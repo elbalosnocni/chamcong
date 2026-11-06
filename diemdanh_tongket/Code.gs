@@ -1,42 +1,43 @@
 /**
- * Điểm danh nhân viên bằng QR + selfie
+ * Hệ thống điểm danh nhân viên bằng QR + selfie nâng cấp hệ thống Admin Dashboard
  * Công Ty Cổ Phần Liwayway VN
- *
- * Mỗi ca là MỘT dòng: giờ vào, giờ ra và số giờ làm thực tế.
- * Dán file này vào Apps Script của Google Sheets (xem HUONG-DAN.md).
  */
 
 var TZ = 'Asia/Ho_Chi_Minh';
-var SHEET_LOG = 'ChamCong';        // sheet chấm công, mỗi ca một dòng (tự tạo)
-var SHEET_STAFF = 'NhanVien';      // sheet danh sách nhân viên (tự tạo, không bắt buộc điền)
-var FOLDER_NAME = 'DiemDanh_Anh';  // thư mục Drive chứa ảnh selfie (tự tạo)
-var STALE_SECONDS = 180;           // ảnh chụp cũ hơn mức này bị gắn cờ
-var MIN_GAP_SECONDS = 60;          // chặn bấm gửi trùng trong khoảng này
-var MAX_SHIFT_HOURS = 16;          // ca dài tối đa; quá mức này coi là quên ra ca
-var BREAK_MINUTES = 0;             // phút nghỉ trừ khỏi mỗi ca (ví dụ 60 nếu nghỉ trưa không tính lương)
+var SHEET_LOG = 'ChamCong';        // Sheet chấm công, mỗi ca một dòng
+var SHEET_STAFF = 'NhanVien';      // Sheet danh sách nhân viên
+var FOLDER_NAME = 'DiemDanh_Anh';  // Thư mục Drive chứa ảnh selfie
+var STALE_SECONDS = 180;           // Ảnh chụp cũ hơn mức này bị gắn cờ
+var MIN_GAP_SECONDS = 60;          // Chặn bấm gửi trùng trong khoảng này
+var MAX_SHIFT_HOURS = 16;          // Ca dài tối đa
+var BREAK_MINUTES = 0;             // Phút nghỉ trừ khỏi mỗi ca
 
-// Số cột (bắt đầu từ 1)
+// Chỉ số cột cấu hình (Bắt đầu từ 1)
 var C = { DATE: 1, CODE: 2, NAME: 3, IN: 4, OUT: 5, HOURS: 6, PHOTO_IN: 7, PHOTO_OUT: 8, WARN: 9, DEV_IN: 10, DEV_OUT: 11 };
 var HEADERS = ['Ngày', 'Mã NV', 'Họ tên', 'Giờ vào', 'Giờ ra', 'Số giờ', 'Ảnh vào', 'Ảnh ra', 'Cảnh báo', 'Thiết bị vào', 'Thiết bị ra'];
 
-// Cấu hình tài khoản Admin mặc định (Bạn có thể đổi lại tùy ý)
+// Cấu hình tài khoản đăng nhập Admin Dashboard
 const ADMIN_CONFIG = {
   username: "admin",
-  password: "AdminPassword123" // Thay đổi mật khẩu bảo mật hơn tại đây
-};
-
-// Cấu hình tên các Sheet dữ liệu hiện tại của bạn
-const SHEET_NAMES = {
-  DIEM_DANH: "DiemDanh", // Tên sheet lưu lịch sử điểm danh (chứa Giờ, Mã NV, Tên, Phòng ban, Selfie...)
-  NHAN_VIEN: "NhanVien"  // Tên sheet danh sách nhân viên để đối chiếu vắng mặt
+  password: "AdminPassword123" // Hãy chủ động thay đổi mật khẩu an toàn hơn tại đây
 };
 
 /**
- * Hàm điều hướng hiển thị Giao diện (Web App)
+ * Hàm định tuyến hiển thị giao diện (Web App) - ĐÃ SỬA LỖI CÚ PHÁP
  */
-/** Mở trang web. Thêm ?view=qr vào đường dẫn để mở trang in mã QR. */
 function doGet(e) {
   var view = e && e.parameter && e.parameter.view;
+  var pageParam = e && e.parameter && e.parameter.page;
+  
+  // Điều hướng phân hệ dựa trên tham số URL
+  if (pageParam === 'admin') {
+    return HtmlService.createTemplateFromFile('Admin')
+        .evaluate()
+        .setTitle('Hệ Thống Quản Trị Điểm Danh QR - Liwayway VN')
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+  
   var page = view === 'qr' ? 'Qr' : 'Index';
   var t = HtmlService.createTemplateFromFile(page);
   t.appUrl = ScriptApp.getService().getUrl();
@@ -45,23 +46,9 @@ function doGet(e) {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
-// Nếu yêu cầu trang quản trị, trả về giao diện Admin Dashboard
-  if (e.parameter.page === 'admin') {
-    return HtmlService.createTemplateFromFile('Admin')
-        .evaluate()
-        .setTitle('Hệ Thống Quản Trị Điểm Danh QR')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  }
-  
-  // Mặc định giữ nguyên giao diện điểm danh cũ (Index.html) của bạn
-  return HtmlService.createTemplateFromFile('Index')
-      .evaluate()
-      .setTitle('Điểm Danh QR Code')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
 
 /**
- * Hàm kiểm tra đăng nhập Admin bảo mật
+ * Xác thực thông tin đăng nhập Admin
  */
 function checkAdminLogin(username, password) {
   if (username === ADMIN_CONFIG.username && password === ADMIN_CONFIG.password) {
@@ -71,115 +58,170 @@ function checkAdminLogin(username, password) {
 }
 
 /**
- * API Lấy toàn bộ dữ liệu thống kê cho Dashboard nâng cấp
+ * API Lấy dữ liệu báo cáo tích hợp cho trang quản trị Admin
+ * Tối ưu hóa đọc mảng, phân tích trạng thái Vào/Ra/Vắng/Cảnh báo từ cấu trúc thực tế
  */
 function getAdminDashboardData(targetDateStr) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheetDD = ss.getSheetByName(SHEET_NAMES.DIEM_DANH);
-    const sheetNV = ss.getSheetByName(SHEET_NAMES.NHAN_VIEN);
+    const sheetDD = ss.getSheetByName(SHEET_LOG); // Khớp chuẩn xác tên SHEET_LOG ('ChamCong')
+    const sheetNV = ss.getSheetByName(SHEET_STAFF); // Khớp chuẩn xác tên SHEET_STAFF ('NhanVien')
     
-    // Xử lý ngày lọc (Mặc định là hôm nay nếu không truyền)
-    let targetDate = targetDateStr ? new Date(targetDateStr) : new Date();
-    targetDate.setHours(0,0,0,0);
-    
-    // 1. Lấy danh sách toàn bộ nhân viên hoạt động
-    let allEmployees = [];
-    if (sheetNV) {
-      const nvData = sheetNV.getDataRange().getValues();
-      // Giả định: Dòng 1 tiêu đề. Cột 0: Mã NV, Cột 1: Họ Tên, Cột 2: Phòng ban
-      for(let i = 1; i < nvData.length; i++) {
-        if(nvData[i][0]) {
-          allEmployees.push({
-            id: nvData[i][0].toString(),
-            name: nvData[i][1],
-            dept: nvData[i][2]
-          });
-        }
-      }
+    // Đồng bộ xử lý ngày lọc (Định dạng YYYY-MM-DD từ input html)
+    let filterDateStr = targetDateStr;
+    if (!filterDateStr) {
+      filterDateStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd");
     }
     
-    // 2. Lấy dữ liệu điểm danh lịch sử
-    const ddData = sheetDD.getDataRange().getValues();
-    const headers = ddData[0];
-    
-    // Xác định chỉ số cột tự động dựa trên tiêu đề cũ của bạn
-    const idxTime = headers.findIndex(h => h.toString().toLowerCase().includes('giờ') || h.toString().toLowerCase().includes('timestamp'));
-    const idxId = headers.findIndex(h => h.toString().toLowerCase().includes('mã') || h.toString().toLowerCase().includes('id'));
-    const idxName = headers.findIndex(h => h.toString().toLowerCase().includes('tên') || h.toString().toLowerCase().includes('name'));
-    const idxDept = headers.findIndex(h => h.toString().toLowerCase().includes('phòng') || h.toString().toLowerCase().includes('bộ phận'));
-    const idxSelfie = headers.findIndex(h => h.toString().toLowerCase().includes('ảnh') || h.toString().toLowerCase().includes('selfie') || h.toString().toLowerCase().includes('image'));
-    const idxStatus = headers.findIndex(h => h.toString().toLowerCase().includes('trạng thái') || h.toString().toLowerCase().includes('status'));
-
-    let checkedInIds = new Set();
-    let records = [];
-    let countLate = 0;
-    
-    for (let i = 1; i < ddData.length; i++) {
-      let row = ddData[i];
-      if (!row[idxId]) continue;
-      
-      let logTime = new Date(row[idxTime]);
-      let logDate = new Date(logTime.getTime());
-      logDate.setHours(0,0,0,0);
-      
-      // Chỉ lọc dữ liệu của ngày được chọn
-      if (logDate.getTime() === targetDate.getTime()) {
-        let empId = row[idxId].toString();
-        checkedInIds.add(empId);
-        
-        let isLate = false;
-        if (idxStatus !== -1 && row[idxStatus].toString().toLowerCase().includes('trễ')) {
-          isLate = true;
-          countLate++;
-        }
-        
-        records.push({
-          time: Utilities.formatDate(logTime, Session.getScriptTimeZone(), "HH:mm:ss"),
-          date: Utilities.formatDate(logTime, Session.getScriptTimeZone(), "yyyy-MM-dd"),
-          id: empId,
-          name: idxName !== -1 ? row[idxName] : "",
-          dept: idxDept !== -1 ? row[idxDept] : "",
-          selfie: idxSelfie !== -1 ? row[idxSelfie] : "",
-          status: idxStatus !== -1 ? row[idxStatus] : (isLate ? "Đi trễ" : "Hợp lệ")
+    // 1. Tải danh bạ toàn bộ nhân viên từ hệ thống để đối chiếu vắng mặt
+    let allEmployees = {};
+    if (sheetNV) {
+      let lastRowNV = sheetNV.getLastRow();
+      if (lastRowNV >= 2) {
+        let nvData = sheetNV.getRange(2, 1, lastRowNV - 1, 2).getValues();
+        nvData.forEach(r => {
+          let code = String(r[0]).trim().toUpperCase();
+          if (code) {
+            allEmployees[code] = { id: code, name: String(r[1]).trim(), dept: "Nhà máy Liwayway" };
+          }
         });
       }
     }
     
-    // 3. Tính toán số liệu vắng mặt từ danh sách nhân viên gốc
-    let missingRecords = [];
-    allEmployees.forEach(emp => {
-      if (!checkedInIds.has(emp.id)) {
-        missingRecords.push({
-          time: "--:--:--",
-          date: targetDateStr || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd"),
-          id: emp.id,
-          name: emp.name,
-          dept: emp.dept,
-          selfie: "",
+    // 2. Phân tích lịch sử chấm công trong ngày được chọn
+    let records = [];
+    let checkedInCodes = new Set();
+    let countIn = 0;
+    let countOut = 0;
+    let countWarn = 0;
+    
+    if (sheetDD) {
+      let lastRowDD = sheetDD.getLastRow();
+      if (lastRowDD >= 2) {
+        let ddData = sheetDD.getRange(2, 1, lastRowDD - 1, HEADERS.length).getValues();
+        
+        ddData.forEach(row => {
+          let rowDateObj = row[C.DATE - 1];
+          if (!rowDateObj) return;
+          
+          let formattedRowDate = "";
+          if (rowDateObj instanceof Date && !isNaN(rowDateObj.getTime())) {
+            formattedRowDate = Utilities.formatDate(rowDateObj, TZ, "yyyy-MM-dd");
+          } else {
+            // Trường hợp ngày lưu dạng text chuỗi dd/mm/yyyy
+            let parts = String(rowDateObj).split('/');
+            if (parts.length === 3) {
+              formattedRowDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+          }
+          
+          // Lọc dữ liệu chuẩn khớp với ngày Admin đang truy vấn
+          if (formattedRowDate === filterDateStr) {
+            let code = String(row[C.CODE - 1]).toUpperCase().trim();
+            if (!code) return;
+            
+            checkedInCodes.add(code);
+            
+            let timeInStr = "--:--";
+            let timeOutStr = "--:--";
+            let photoInUrl = "";
+            let photoOutUrl = "";
+            
+            // Trích xuất link ảnh từ công thức HYPERLINK
+            if (row[C.IN - 1] instanceof Date) {
+              timeInStr = Utilities.formatDate(row[C.IN - 1], TZ, "HH:mm");
+              countIn++;
+            }
+            if (row[C.OUT - 1] instanceof Date) {
+              timeOutStr = Utilities.formatDate(row[C.OUT - 1], TZ, "HH:mm");
+              countOut++;
+            }
+            
+            // Phân tách lấy URL ảnh từ cấu trúc ô dữ liệu
+            photoInUrl = parseDriveUrl_(row[C.PHOTO_IN - 1]);
+            photoOutUrl = parseDriveUrl_(row[C.PHOTO_OUT - 1]);
+            
+            let warningText = String(row[C.WARN - 1] || "").trim();
+            let status = "Đang trong ca";
+            if (row[C.OUT - 1] instanceof Date) {
+              status = "Đã ra ca";
+            }
+            if (warningText) {
+              countWarn++;
+              status += " (Có cảnh báo)";
+            }
+            
+            records.push({
+              id: code,
+              name: row[C.NAME - 1] || (allEmployees[code] ? allEmployees[code].name : ""),
+              dept: allEmployees[code] ? allEmployees[code].dept : "Nhân sự ngoài danh sách",
+              date: formattedRowDate,
+              timeIn: timeInStr,
+              timeOut: timeOutStr,
+              hours: row[C.HOURS - 1] ? Number(row[C.HOURS - 1]).toFixed(2) : "0.00",
+              photoIn: photoInUrl,
+              photoOut: photoOutUrl,
+              warning: warningText,
+              status: status
+            });
+          }
+        });
+      }
+    }
+    
+    // 3. Tự động tính toán các nhân sự vắng mặt dựa trên bảng danh sách nhân viên gốc
+    let totalStaff = Object.keys(allEmployees).length;
+    let absentCount = 0;
+    
+    Object.keys(allEmployees).forEach(code => {
+      if (!checkedInCodes.has(code)) {
+        absentCount++;
+        records.push({
+          id: code,
+          name: allEmployees[code].name,
+          dept: allEmployees[code].dept,
+          date: filterDateStr,
+          timeIn: "--:--",
+          timeOut: "--:--",
+          hours: "0.00",
+          photoIn: "",
+          photoOut: "",
+          warning: "",
           status: "Vắng mặt"
         });
       }
     });
     
-    // Gộp chung để hiển thị danh sách tổng hợp trực quan
-    let fullReportList = records.concat(missingRecords);
-    
     return {
       success: true,
       summary: {
-        totalEmployees: allEmployees.length || (checkedInIds.size + missingRecords.length),
-        totalCheckedIn: checkedInIds.size,
-        totalLate: countLate,
-        totalAbsent: missingRecords.length
+        totalEmployees: totalStaff || checkedInCodes.size,
+        totalCheckedIn: checkedInCodes.size,
+        totalInCa: countIn - countOut,
+        totalAbsent: absentCount,
+        totalWarning: countWarn
       },
-      detailRecords: fullReportList
+      detailRecords: records
     };
     
   } catch (error) {
     return { success: false, message: error.toString() };
   }
 }
+
+/**
+ * Hàm bổ trợ bóc tách URL từ công thức ô tính của Google Sheet dạng `=HYPERLINK("url","text")`
+ */
+function parseDriveUrl_(cellValue) {
+  let valStr = String(cellValue).trim();
+  if (valStr.startsWith("=") || valStr.includes("HYPERLINK")) {
+    let match = valStr.match(/"([^"]+)"/);
+    if (match && match[1]) return match[1];
+  }
+  if (valStr.startsWith("http")) return valStr;
+  return "";
+}
+
 /** Chạy một lần từ trình soạn thảo để cấp quyền và tạo sẵn sheet, thư mục. */
 function setup() {
   SpreadsheetApp.getActiveSpreadsheet().setSpreadsheetTimeZone(TZ);
@@ -224,171 +266,142 @@ function getFolder_() {
   var props = PropertiesService.getScriptProperties();
   var id = props.getProperty('FOLDER_ID');
   if (id) {
-    try { return DriveApp.getFolderById(id); } catch (err) { /* thư mục đã bị xoá, tạo lại */ }
-  }
-  var folder = DriveApp.createFolder(FOLDER_NAME);
-  props.setProperty('FOLDER_ID', folder.getId());
-  return folder;
+try { return DriveApp.getFolderById(id); } catch (err) { /* thư mục đã bị xoá, tạo lại */ }
 }
-
+var folder = DriveApp.createFolder(FOLDER_NAME);
+props.setProperty('FOLDER_ID', folder.getId());
+return folder;
+}
 /** Trả về bảng mã -> tên nếu sheet NhanVien có dữ liệu, ngược lại trả về null. */
 function staffMap_() {
-  var sh = getStaffSheet_();
-  var last = sh.getLastRow();
-  if (last < 2) return null;
-  var rows = sh.getRange(2, 1, last - 1, 2).getValues();
-  var map = {};
-  rows.forEach(function (r) {
-    var code = String(r[0]).trim().toUpperCase();
-    if (code) map[code] = String(r[1]).trim();
-  });
-  return Object.keys(map).length ? map : null;
+var sh = getStaffSheet_();
+var last = sh.getLastRow();
+if (last < 2) return null;
+var rows = sh.getRange(2, 1, last - 1, 2).getValues();
+var map = {};
+rows.forEach(function (r) {
+var code = String(r[0]).trim().toUpperCase();
+if (code) map[code] = String(r[1]).trim();
+});
+return Object.keys(map).length ? map : null;
 }
-
 /** Gọi từ trang để tự điền họ tên khi nhập mã. */
 function getName(code) {
-  var map = staffMap_();
-  if (!map) return { listed: false, name: '' };
-  var key = String(code || '').trim().toUpperCase();
-  return { listed: true, name: map[key] || '' };
+var map = staffMap_();
+if (!map) return { listed: false, name: '' };
+var key = String(code || '').trim().toUpperCase();
+return { listed: true, name: map[key] || '' };
 }
-
 function isDate_(v) { return v instanceof Date && !isNaN(v.getTime()); }
 function fmt_(d, f) { return Utilities.formatDate(d, TZ, f); }
-
 function hoursFormula_(row) {
-  return '=IF(AND(ISNUMBER(D' + row + '),ISNUMBER(E' + row + ')),MAX(0,ROUND((E' + row + '-D' + row + ')*24-' + BREAK_MINUTES + '/60,2)),"")';
+return '=IF(AND(ISNUMBER(D' + row + '),ISNUMBER(E' + row + ')),MAX(0,ROUND((E' + row + '-D' + row + ')*24-' + BREAK_MINUTES + '/60,2)),"")';
 }
-
 function addWarn_(sh, row, text) {
-  var cell = sh.getRange(row, C.WARN);
-  var old = String(cell.getValue() || '');
-  cell.setValue(old ? old + '; ' + text : text);
-  sh.getRange(row, 1, 1, HEADERS.length).setBackground('#fde8dc');
+var cell = sh.getRange(row, C.WARN);
+var old = String(cell.getValue() || '');
+cell.setValue(old ? old + '; ' + text : text);
+sh.getRange(row, 1, 1, HEADERS.length).setBackground('#fde8dc');
 }
-
 /** Nhận một lượt điểm danh từ trang. */
 function submitCheckin(data) {
-  data = data || {};
-  var code = String(data.code || '').trim().toUpperCase().slice(0, 30);
-  var name = String(data.name || '').trim().slice(0, 80);
-  var isOut = data.type === 'out';
-  var device = String(data.device || '').replace(/[^A-Za-z0-9\-]/g, '').slice(0, 40);
-  var age = Math.max(0, Math.min(Number(data.photoAgeSec) || 0, 31536000));
-  var photo = String(data.photo || '');
-
-  if (!code || !name) return { ok: false, message: 'Hãy nhập họ tên và mã nhân viên.' };
-  var m = photo.match(/^data:image\/jpeg;base64,([A-Za-z0-9+\/=]+)$/);
-  if (!m) return { ok: false, message: 'Chưa có ảnh selfie hợp lệ. Hãy chụp lại.' };
-  if (m[1].length > 600000) return { ok: false, message: 'Ảnh quá lớn. Hãy chụp lại.' };
-
-  var map = staffMap_();
-  if (map) {
-    if (!map[code]) return { ok: false, message: 'Mã nhân viên không có trong danh sách. Hãy kiểm tra lại mã.' };
-    name = map[code];
-  }
-
-  var lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    var sh = getLogSheet_();
-    var now = new Date();
-    var nowTxt = fmt_(now, 'HH:mm:ss');
-    var today = fmt_(now, 'dd/MM/yyyy');
-
-    // Đọc tối đa 600 dòng gần nhất.
-    var last = sh.getLastRow();
-    var start = Math.max(2, last - 599);
-    var rows = last >= 2 ? sh.getRange(start, 1, last - start + 1, HEADERS.length).getValues() : [];
-
-    // Dòng gần nhất của cùng mã nhân viên.
-    var idx = -1;
-    for (var i = rows.length - 1; i >= 0; i--) {
-      if (String(rows[i][C.CODE - 1]).toUpperCase() === code) { idx = i; break; }
-    }
-    var prev = idx >= 0 ? rows[idx] : null;
-    var prevRow = idx >= 0 ? start + idx : 0;
-    var prevIn = prev && isDate_(prev[C.IN - 1]) ? prev[C.IN - 1] : null;
-    var prevOut = prev && isDate_(prev[C.OUT - 1]) ? prev[C.OUT - 1] : null;
-    var open = !!prevIn && !prevOut;
-    var openHours = open ? (now - prevIn) / 3600000 : 0;
-
-    // Chặn bấm trùng trong thời gian ngắn.
-    var lastEvent = prevOut || prevIn;
-    if (lastEvent && (now - lastEvent) / 1000 < MIN_GAP_SECONDS) {
-      return { ok: false, message: 'Bạn vừa điểm danh xong. Vui lòng đợi ' + MIN_GAP_SECONDS + ' giây nếu cần gửi lại.' };
-    }
-
-    // Vào ca khi ca trước vẫn đang mở.
-    if (!isOut && open && openHours < MAX_SHIFT_HOURS) {
-      return { ok: false, message: 'Bạn đã vào ca lúc ' + fmt_(prevIn, 'HH:mm') + ' ngày ' + fmt_(prevIn, 'dd/MM') + ' và chưa ra ca. Muốn kết thúc ca thì chọn "Ra ca".' };
-    }
-
-    // Ra ca lần nữa ngay sau khi vừa ra ca.
-    if (isOut && !open && prevIn && prevOut && (now - prevOut) / 3600000 < 2) {
-      return { ok: false, message: 'Bạn đã ra ca lúc ' + fmt_(prevOut, 'HH:mm') + '. Không cần điểm danh ra ca lần nữa.' };
-    }
-
-    var warns = [];
-    if (age > STALE_SECONDS) warns.push((isOut ? 'Ảnh ra' : 'Ảnh vào') + ' cũ ' + Math.round(age / 60) + ' phút');
-    if (device) {
-      var others = {};
-      rows.forEach(function (r) {
-        var d = isDate_(r[C.DATE - 1]) ? fmt_(r[C.DATE - 1], 'dd/MM/yyyy') : String(r[C.DATE - 1]);
-        var rc = String(r[C.CODE - 1]).toUpperCase();
-        if (d === today && rc !== code && (r[C.DEV_IN - 1] === device || r[C.DEV_OUT - 1] === device)) others[rc] = true;
-      });
-      var n = Object.keys(others).length;
-      if (n > 0) warns.push('Thiết bị này đã điểm danh cho ' + n + ' mã khác hôm nay');
-    }
-
-    // Lưu ảnh vào Drive.
-    var fileName = fmt_(now, 'yyyyMMdd_HHmmss') + '_' + code + '_' + (isOut ? 'ra' : 'vao') + '.jpg';
-    var blob = Utilities.newBlob(Utilities.base64Decode(m[1]), 'image/jpeg', fileName);
-    var url = getFolder_().createFile(blob).getUrl();
-    var link = '=HYPERLINK("' + url + '","Xem ảnh")';
-
-    if (!isOut) {
-      // VÀO CA: tạo dòng mới.
-      if (open && openHours >= MAX_SHIFT_HOURS) addWarn_(sh, prevRow, 'Quên điểm danh ra ca');
-      sh.appendRow([now, code, name, now, '', '', '', '', warns.join('; '), device, '']);
-      var row = sh.getLastRow();
-      sh.getRange(row, C.DATE).setNumberFormat('dd/MM/yyyy');
-      sh.getRange(row, C.IN).setNumberFormat('dd/MM/yyyy HH:mm:ss');
-      sh.getRange(row, C.OUT).setNumberFormat('dd/MM/yyyy HH:mm:ss');
-      sh.getRange(row, C.HOURS).setFormula(hoursFormula_(row)).setNumberFormat('0.00');
-      sh.getRange(row, C.PHOTO_IN).setFormula(link);
-      if (warns.length) sh.getRange(row, 1, 1, HEADERS.length).setBackground('#fde8dc');
-      return { ok: true, name: name, message: 'Đã vào ca lúc ' + nowTxt + ' ngày ' + today + '.' };
-    }
-
-    // RA CA
-    if (open && openHours <= MAX_SHIFT_HOURS) {
-      // Ghi giờ ra vào dòng đang mở.
-      sh.getRange(prevRow, C.OUT).setValue(now).setNumberFormat('dd/MM/yyyy HH:mm:ss');
-      sh.getRange(prevRow, C.PHOTO_OUT).setFormula(link);
-      sh.getRange(prevRow, C.DEV_OUT).setValue(device);
-      sh.getRange(prevRow, C.HOURS).setFormula(hoursFormula_(prevRow)).setNumberFormat('0.00');
-      warns.forEach(function (w) { addWarn_(sh, prevRow, w); });
-      var worked = Math.max(0, openHours - BREAK_MINUTES / 60);
-      var hh = Math.floor(worked), mm = Math.round((worked - hh) * 60);
-      if (mm === 60) { hh += 1; mm = 0; }
-      return { ok: true, name: name, message: 'Đã ra ca lúc ' + nowTxt + '. Hôm nay bạn làm ' + hh + ' giờ ' + mm + ' phút.' };
-    }
-
-    // Không có giờ vào tương ứng: tạo dòng chỉ có giờ ra để quản lý xử lý.
-    if (open && openHours > MAX_SHIFT_HOURS) addWarn_(sh, prevRow, 'Quên điểm danh ra ca');
-    warns.unshift('Thiếu giờ vào');
-    sh.appendRow([now, code, name, '', now, '', '', '', warns.join('; '), '', device]);
-    var r2 = sh.getLastRow();
-    sh.getRange(r2, C.DATE).setNumberFormat('dd/MM/yyyy');
-    sh.getRange(r2, C.IN).setNumberFormat('dd/MM/yyyy HH:mm:ss');
-    sh.getRange(r2, C.OUT).setNumberFormat('dd/MM/yyyy HH:mm:ss');
-    sh.getRange(r2, C.HOURS).setFormula(hoursFormula_(r2)).setNumberFormat('0.00');
-    sh.getRange(r2, C.PHOTO_OUT).setFormula(link);
-    sh.getRange(r2, 1, 1, HEADERS.length).setBackground('#fde8dc');
-    return { ok: true, name: name, message: 'Đã ghi giờ ra lúc ' + nowTxt + '. Hệ thống không thấy giờ vào của bạn nên quản lý sẽ kiểm tra.' };
-  } finally {
-    lock.releaseLock();
-  }
+data = data || {};
+var code = String(data.code || '').trim().toUpperCase().slice(0, 30);
+var name = String(data.name || '').trim().slice(0, 80);
+var isOut = data.type === 'out';
+var device = String(data.device || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40);
+var age = Math.max(0, Math.min(Number(data.photoAgeSec) || 0, 31536000));
+var photo = String(data.photo || '');
+if (!code || !name) return { ok: false, message: 'Hãy nhập họ tên và mã nhân viên.' };
+var m = photo.match(/^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$/);
+if (!m) return { ok: false, message: 'Chưa có ảnh selfie hợp lệ. Hãy chụp lại.' };
+if (m[1].length > 600000) return { ok: false, message: 'Ảnh quá lớn. Hãy chụp lại.' };
+var map = staffMap_();
+if (map) {
+if (!map[code]) return { ok: false, message: 'Mã nhân viên không có trong danh sách. Hãy kiểm tra lại mã.' };
+name = map[code];
+}
+var lock = LockService.getScriptLock();
+lock.waitLock(20000);
+try {
+var sh = getLogSheet_();
+var now = new Date();
+var nowTxt = fmt_(now, 'HH:mm:ss');
+var today = fmt_(now, 'dd/MM/yyyy');
+var last = sh.getLastRow();
+var start = Math.max(2, last - 599);
+var rows = last >= 2 ? sh.getRange(start, 1, last - start + 1, HEADERS.length).getValues() :;
+var idx = -1;
+for (var i = rows.length - 1; i >= 0; i--) {
+if (String(rows[i][C.CODE - 1]).toUpperCase() === code) { idx = i; break; }
+}
+var prev = idx >= 0 ? rows[idx] : null;
+var prevRow = idx >= 0 ? start + idx : 0;
+var prevIn = prev && isDate_(prev[C.IN - 1]) ? prev[C.IN - 1] : null;
+var prevOut = prev && isDate_(prev[C.OUT - 1]) ? prev[C.OUT - 1] : null;
+var open = !!prevIn && !prevOut;
+var openHours = open ? (now - prevIn) / 3600000 : 0;
+var lastEvent = prevOut || prevIn;
+if (lastEvent && (now - lastEvent) / 1000 < MIN_GAP_SECONDS) {
+return { ok: false, message: 'Bạn vừa điểm danh xong. Vui lòng đợi ' + MIN_GAP_SECONDS + ' giây nếu cần gửi lại.' };
+}
+if (!isOut && open && openHours < MAX_SHIFT_HOURS) {
+return { ok: false, message: 'Bạn đã vào ca lúc ' + fmt_(prevIn, 'HH:mm') + ' ngày ' + fmt_(prevIn, 'dd/MM') + ' và chưa ra ca. Muốn kết thúc ca thì chọn "Ra ca".' };
+}
+if (isOut && !open && prevIn && prevOut && (now - prevOut) / 3600000 < 2) {
+return { ok: false, message: 'Bạn đã ra ca lúc ' + fmt_(prevOut, 'HH:mm') + '. Không cần điểm danh ra ca lần nữa.' };
+}
+var warns =;
+if (age > STALE_SECONDS) warns.push((isOut ? 'Ảnh ra' : 'Ảnh vào') + ' cũ ' + Math.round(age / 60) + ' phút');
+if (device) {
+var others = {};
+rows.forEach(function (r) {
+var d = isDate_(r[C.DATE - 1]) ? fmt_(r[C.DATE - 1], 'dd/MM/yyyy') : String(r[C.DATE - 1]);
+var rc = String(r[C.CODE - 1]).toUpperCase();
+if (d === today && rc !== code && (r[C.DEV_IN - 1] === device || r[C.DEV_OUT - 1] === device)) others[rc] = true;
+});
+var n = Object.keys(others).length;
+if (n > 0) warns.push('Thiết bị này đã điểm danh cho ' + n + ' mã khác hôm nay');
+}
+var fileName = fmt_(now, 'yyyyMMdd_HHmmss') + '' + code + '' + (isOut ? 'ra' : 'vao') + '.jpg';
+var blob = Utilities.newBlob(Utilities.base64Decode(m[1]), 'image/jpeg', fileName);
+var url = getFolder_().createFile(blob).getUrl();
+var link = '=HYPERLINK("' + url + '","Xem ảnh")';
+if (!isOut) {
+if (open && openHours >= MAX_SHIFT_HOURS) addWarn_(sh, prevRow, 'Quên điểm danh ra ca');
+sh.appendRow([now, code, name, now, '', '', '', '', warns.join('; '), device, '']);
+var row = sh.getLastRow();
+sh.getRange(row, C.DATE).setNumberFormat('dd/MM/yyyy');
+sh.getRange(row, C.IN).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+sh.getRange(row, C.OUT).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+sh.getRange(row, C.HOURS).setFormula(hoursFormula_(row)).setNumberFormat('0.00');
+sh.getRange(row, C.PHOTO_IN).setFormula(link);
+if (warns.length) sh.getRange(row, 1, 1, HEADERS.length).setBackground('#fde8dc');
+return { ok: true, name: name, message: 'Đã vào ca lúc ' + nowTxt + ' ngày ' + today + '.' };
+}
+if (open && openHours <= MAX_SHIFT_HOURS) {
+sh.getRange(prevRow, C.OUT).setValue(now).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+sh.getRange(prevRow, C.PHOTO_OUT).setFormula(link);
+sh.getRange(prevRow, C.DEV_OUT).setValue(device);
+sh.getRange(prevRow, C.HOURS).setFormula(hoursFormula_(prevRow)).setNumberFormat('0.00');
+warns.forEach(function (w) { addWarn_(sh, prevRow, w); });
+var worked = Math.max(0, openHours - BREAK_MINUTES / 60);
+var hh = Math.floor(worked), mm = Math.round((worked - hh) * 60);
+if (mm === 60) { hh += 1; mm = 0; }
+return { ok: true, name: name, message: 'Đã ra ca lúc ' + nowTxt + '. Hôm nay bạn làm ' + hh + ' giờ ' + mm + ' phút.' };
+}
+if (open && openHours > MAX_SHIFT_HOURS) addWarn_(sh, prevRow, 'Quên điểm danh ra ca');
+warns.unshift('Thiếu giờ vào');
+sh.appendRow([now, code, name, '', now, '', '', '', warns.join('; '), '', device]);
+var r2 = sh.getLastRow();
+sh.getRange(r2, C.DATE).setNumberFormat('dd/MM/yyyy');
+sh.getRange(r2, C.IN).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+sh.getRange(r2, C.OUT).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+sh.getRange(r2, C.HOURS).setFormula(hoursFormula_(r2)).setNumberFormat('0.00');
+sh.getRange(r2, C.PHOTO_OUT).setFormula(link);
+sh.getRange(r2, 1, 1, HEADERS.length).setBackground('#fde8dc');
+return { ok: true, name: name, message: 'Đã ghi giờ ra lúc ' + nowTxt + '. Hệ thống không thấy giờ vào của bạn nên quản lý sẽ kiểm tra.' };
+} finally {
+lock.releaseLock();
+}
 }
