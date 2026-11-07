@@ -161,7 +161,7 @@ function applyFiltersAndSearch(){const q=$('search-input').value.toLocaleLowerCa
 $('table-body').addEventListener('click',e=>{const b=e.target.closest('.photo-link');if(b)openImageModal(b.dataset.id,b.dataset.url,b.dataset.name);});
 function openImageModal(fileId,fallbackUrl,name){
  $('modal-title').textContent=name;$('modal-img').src='';$('image-modal').classList.remove('hidden');$('image-modal').classList.add('flex');
- if(fileId){$('modal-img').alt='Đang tải ảnh...';AttendanceAPI.get('getPhoto',{token:adminToken,fileId:fileId}).then(r=>{if(r&&r.success)$('modal-img').src=r.dataUrl;else alert((r&&r.message)||'Không tải được ảnh.');}).catch(e=>alert(e.message));}
+ if(fileId){$('modal-img').alt='Đang tải ảnh...';AttendanceAPI.post('getPhoto',{token:adminToken,fileId:fileId}).then(r=>{if(r&&r.success)$('modal-img').src=r.dataUrl;else alert((r&&r.message)||'Không tải được ảnh.');}).catch(e=>alert(e.message));}
  else if(fallbackUrl){$('modal-img').src=fallbackUrl;}
 }
 function closeImageModal(){$('image-modal').classList.add('hidden');$('image-modal').classList.remove('flex');$('modal-img').src='';}
