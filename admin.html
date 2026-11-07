@@ -167,6 +167,52 @@ function openImageModal(fileId,fallbackUrl,name){
 function closeImageModal(){$('image-modal').classList.add('hidden');$('image-modal').classList.remove('flex');$('modal-img').src='';}
 function csvCell(v){return '"'+String(v==null?'':v).replace(/"/g,'""')+'"';}
 function exportToExcel(){const q=$('search-input').value.toLocaleLowerCase('vi').trim(),f=$('filter-status').value;const rows=masterData.filter(x=>[x.id,x.name,x.dept].join(' ').toLocaleLowerCase('vi').includes(q)&&(f==='ALL'||(f==='Cảnh báo'?!!x.warning:statusBase(x)===f)));if(!rows.length){alert('Không có dữ liệu để xuất.');return;}const header=['Mã nhân viên','Họ tên','Phòng ban','Ngày','Giờ vào','Giờ ra','Số giờ','Trạng thái','Cảnh báo','Ảnh vào','Ảnh ra','Vĩ độ','Kinh độ','Sai số GPS','Khoảng cách GPS'];const lines=[header,...rows.map(r=>[r.id,r.name,r.dept,r.date,r.timeIn,r.timeOut,r.hours,r.status,r.warning,r.photoIn,r.photoOut,r.lat,r.lng,r.accuracy,r.distance])].map(row=>row.map(csvCell).join(','));const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='BaoCao_DiemDanh_'+$('filter-date').value+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);}
+
+const thumbCache = new Map();
+let thumbQueue = [], thumbTimer = null, thumbBusy = false;
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+
+const thumbObserver = new IntersectionObserver(entries => {
+  entries.forEach(en => {
+    if (!en.isIntersecting) return;
+    const img = en.target; thumbObserver.unobserve(img);
+    const id = img.dataset.thumb;
+    if (thumbCache.has(id)) { img.src = thumbCache.get(id); return; }
+    if (!thumbQueue.includes(id)) thumbQueue.push(id);
+    clearTimeout(thumbTimer); thumbTimer = setTimeout(flushThumbs, 150);
+  });
+}, {rootMargin: '200px'});
+
+async function flushThumbs() {
+  if (thumbBusy) return;
+  thumbBusy = true;
+  while (thumbQueue.length) {
+    const batch = thumbQueue.splice(0, 6);
+    try {
+      const r = await AttendanceAPI.post('getThumbs', {token: adminToken, ids: batch});
+      if (r && r.success) batch.forEach(id => { if (r.thumbs[id]) thumbCache.set(id, r.thumbs[id]); });
+    } catch (e) {}
+    batch.forEach(id => document.querySelectorAll('img[data-thumb="' + id + '"]').forEach(img => {
+      if (thumbCache.has(id)) img.src = thumbCache.get(id);
+      else img.classList.remove('animate-pulse');
+    }));
+  }
+  thumbBusy = false;
+}
+
+function enhanceThumbs() {
+  document.querySelectorAll('#table-body .photo-link:not([data-enh])').forEach(b => {
+    b.dataset.enh = '1';
+    if (!b.dataset.id) return;
+    b.className = 'photo-link block';
+    b.innerHTML = '<img src="' + BLANK + '" data-thumb="' + b.dataset.id + '" alt="" class="h-16 w-16 animate-pulse rounded-lg border border-slate-200 bg-slate-100 object-cover">';
+    const img = b.firstChild;
+    img.addEventListener('load', () => { if (img.src !== BLANK) img.classList.remove('animate-pulse'); });
+    thumbObserver.observe(img);
+  });
+}
+new MutationObserver(enhanceThumbs).observe(document.getElementById('table-body'), {childList: true});
+enhanceThumbs();
 </script>
 </body>
 </html>
