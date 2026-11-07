@@ -107,14 +107,17 @@ input[readonly]{opacity:.8}
   $('name').oninput=$('code').oninput=ready;
 
   function lookup(){
-    var code=$('code').value.trim();if(!code)return;
-    AttendanceAPI.get('getName',{code:code}).then(function(r){
-      listed=!!(r&&r.listed);
-      if(listed){$('name').value=r.name||'';$('name').readOnly=true;
-        if(!r.name)say('Mã nhân viên không có trong danh sách. Hãy kiểm tra lại mã.',true);else say('');
-      }else{$('name').readOnly=false}
-      ready();
-    }).catch(function(e){say(e.message,true);});
+  var code=$('code').value.trim();if(!code)return;
+  AttendanceAPI.post('getName',{code:code}).then(function(r){
+    listed=!!(r&&r.listed);
+    if(listed){$('name').value=r.name||'';$('name').readOnly=true;
+      if(!r.name)say('Mã nhân viên không có trong danh sách. Hãy kiểm tra lại mã.',true);else say('');
+    }else{$('name').readOnly=false}
+    ready();
+  }).catch(function(){
+    $('name').readOnly=false;ready();
+    say('Chưa tra cứu được tên. Bạn có thể nhập tay, hệ thống sẽ kiểm tra lại khi gửi.',true);
+  });
   }
   $('code').onchange=lookup;
 
