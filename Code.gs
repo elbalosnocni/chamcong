@@ -34,7 +34,6 @@ function doGet(e) {
   try {
     if (action === 'getName') result = getName(p.code);
     else if (action === 'getPublicConfig') result = getPublicConfig();
-    else if (action === 'getPhoto') result = getPhoto(p.token, p.fileId);
     else if (action === 'health') result = {ok:true, service:'attendance-api'};
     else result = {success:false, message:'API action không hợp lệ.'};
   } catch (err) { result = {success:false, message:String(err)}; }
@@ -72,13 +71,16 @@ function doPost(e) {
     else if (action === 'getAdminDashboardData') result = getAdminDashboardData(d.token, d.date);
     else if (action === 'submitCheckin') result = submitCheckin(d);
     else if (action === 'saveGeofence') result = saveGeofence(d.token, d.lat, d.lng, d.radius);
+    else if (action === 'getPhoto') result = getPhoto(d.token, d.fileId);
+    else if (action === 'getThumbs') result = getThumbs(d.token, d.ids);
+    else if (action === 'getName') result = getName(d.code);
     else result = {success:false, ok:false, message:'API action không hợp lệ.'};
     
     // Trả về HTML chứa script postMessage an toàn
     var htmlContent = '<!doctype html><meta charset="utf-8"><body>' +
       '<script>' +
       '  var responseData = { type: "DD_API_RESULT", nonce: ' + JSON.stringify(nonce) + ', result: ' + JSON.stringify(result).replace(/</g, '\\u003c') + ' };' +
-      '  window.parent.postMessage(responseData, "*");' +
+      '  window.top.postMessage(responseData, "*");' +
       '<\/script></body>';
       
     return HtmlService.createHtmlOutput(htmlContent)
@@ -88,7 +90,7 @@ function doPost(e) {
     var errorResult = { success: false, ok: false, message: 'Lỗi hệ thống: ' + err.toString() };
     var errorHtml = '<!doctype html><meta charset="utf-8"><body>' +
       '<script>' +
-      '  window.parent.postMessage({ type: "DD_API_RESULT", nonce: ' + JSON.stringify(nonce) + ', result: ' + JSON.stringify(errorResult).replace(/</g, '\\u003c') + ' }, "*");' +
+      '  window.top.postMessage({ type: "DD_API_RESULT", nonce: ' + JSON.stringify(nonce) + ', result: ' + JSON.stringify(errorResult).replace(/</g, '\\u003c') + ' }, "*");' +
       '<\/script></body>';
       
     return HtmlService.createHtmlOutput(errorHtml)
@@ -315,6 +317,29 @@ if (!/^image\/(jpeg|png|webp)$/.test(mime)) return {success:false,message:'Tệp
 return {success:true,dataUrl:'data:'+mime+';base64,'+Utilities.base64Encode(blob.getBytes())};
 } catch(err) { return {success:false,message:'Không đọc được ảnh. Kiểm tra quyền Drive.'}; }
 }
+
+function getThumbs(token, ids) {
+  if (!isAdminTokenValid_(token)) return {success:false, message:'Phiên đăng nhập hết hạn.'};
+  ids = (Array.isArray(ids) ? ids : []).slice(0, 8);
+  var cache = CacheService.getScriptCache(), thumbs = {};
+  ids.forEach(function(id) {
+    id = String(id || '');
+    if (!/^[A-Za-z0-9_-]{10,}$/.test(id)) return;
+    var key = 'thumb:' + id, hit = cache.get(key);
+    if (hit) { thumbs[id] = hit; return; }
+    try {
+      var file = DriveApp.getFileById(id);
+      var blob = file.getThumbnail() || file.getBlob();
+      var mime = blob.getContentType();
+      if (!/^image\/(jpeg|png|webp)$/.test(mime)) return;
+      var dataUrl = 'data:' + mime + ';base64,' + Utilities.base64Encode(blob.getBytes());
+      thumbs[id] = dataUrl;
+      if (dataUrl.length < 90000) cache.put(key, dataUrl, 21600);
+    } catch (err) {}
+  });
+  return {success:true, thumbs:thumbs};
+}
+
 function getGeofence_() {
 var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CauHinh');
 var out = {lat:null, lng:null, radius:100};
