@@ -42,6 +42,8 @@ input[readonly]{opacity:.8}
 .msg{padding:10px 12px;border-radius:6px;background:var(--ok-bg)}
 .msg.err{background:var(--flag-bg);color:var(--flag)}
 .hint{color:var(--muted);font-size:.85rem;margin:0}
+.adminlink{display:inline-block;margin-top:6px;font-family:var(--font);font-size:.78rem;font-weight:600;color:var(--accent);text-decoration:none;border:1px solid var(--accent);border-radius:6px;padding:3px 10px}
+.adminlink:hover{background:var(--accent);color:var(--accent-fg)}
 [hidden]{display:none!important}
 </style>
 <script src="./config.js"></script><script src="./api.js"></script>
@@ -57,7 +59,7 @@ input[readonly]{opacity:.8}
         <h1>Điểm danh ca làm</h1>
       </div>
     </div>
-    <div class="clock"><span id="clock">--:--:--</span><small id="today"></small></div>
+    <div class="clock"><span id="clock">--:--:--</span><small id="today"></small><a class="adminlink" href="admin.html">Quản trị</a></div>
   </header>
 
   <section class="card">
@@ -65,6 +67,7 @@ input[readonly]{opacity:.8}
       <label>Mã nhân viên<input type="text" id="code" autocomplete="off" autocapitalize="characters" placeholder="NV012"></label>
       <label>Họ tên<input type="text" id="name" autocomplete="name" placeholder="Nguyễn Văn A"></label>
     </div>
+    <div id="shift" class="msg" hidden></div>
     <div class="seg" role="group" aria-label="Loại điểm danh">
       <button type="button" id="t-in" aria-pressed="true">Vào ca</button>
       <button type="button" id="t-out" aria-pressed="false">Ra ca</button>
@@ -107,20 +110,32 @@ input[readonly]{opacity:.8}
   function ready(){$('send').disabled=busy||!photo||!$('name').value.trim()||!$('code').value.trim()}
   $('name').oninput=$('code').oninput=ready;
 
-  function lookup(){
+  function showShift(sh){
+    var el=$('shift');
+    if(!sh||!sh.state){el.hidden=true;return}
+    var t,err=false;
+    if(sh.state==='open'){t='Đã vào ca lúc '+sh.timeIn+' ('+sh.dateIn+'), chưa ra ca.';setType('out')}
+    else if(sh.state==='stale'){t='Ca ngày '+sh.dateIn+' (vào lúc '+sh.timeIn+') chưa ra ca, đã hơn '+Math.floor(sh.hours)+' giờ. Bạn có thể vào ca mới.';err=true;setType('in')}
+    else if(sh.state==='done'){t='Đã vào ca lúc '+sh.timeIn+' và ra ca lúc '+sh.timeOut+' ('+sh.dateOut+').';setType('in')}
+    else{t='Chưa có lượt điểm danh nào.';setType('in')}
+    el.textContent=t;el.className='msg'+(err?' err':'');el.hidden=false;
+  }
+  function lookup(keepMsg){
     var code=$('code').value.trim();if(!code)return;
     AttendanceAPI.post('getName',{code:code}).then(function(r){
       listed=!!(r&&r.listed);
       if(listed){$('name').value=r.name||'';$('name').readOnly=true;
-        if(!r.name)say('Mã nhân viên không có trong danh sách. Hãy kiểm tra lại mã.',true);else say('');
+        if(!r.name)say('Mã nhân viên không có trong danh sách. Hãy kiểm tra lại mã.',true);else if(!keepMsg)say('');
       }else{$('name').readOnly=false}
+      showShift(r&&r.shift);
       ready();
     }).catch(function(){
-      $('name').readOnly=false;ready();
+      $('name').readOnly=false;$('shift').hidden=true;ready();
       say('Chưa tra cứu được tên. Bạn có thể nhập tay, hệ thống sẽ kiểm tra lại khi gửi.',true);
     });
   }
-  $('code').onchange=lookup;
+  $('code').onchange=function(){lookup()};
+  $('code').addEventListener('input',function(){$('shift').hidden=true});
 
   function stopCamera(){if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;}}
   $('enable-device').onclick=async function(){
@@ -182,7 +197,7 @@ input[readonly]{opacity:.8}
       AttendanceAPI.post('submitCheckin',{code:code,name:name,type:type,photo:photo,photoAgeSec:photoAge,device:device,location:location})
       .then(function(r){
         busy=false;
-        if(r&&r.ok){say('Xin chào '+(r.name||name)+'. '+r.message);photo=null;deviceReady=false;$('enable-device').textContent='Bật camera & định vị';$('shot').innerHTML='<span>Chưa có ảnh. Bật camera và chụp selfie mới.</span>';}
+        if(r&&r.ok){say('Xin chào '+(r.name||name)+'. '+r.message);lookup(true);photo=null;deviceReady=false;$('enable-device').textContent='Bật camera & định vị';$('shot').innerHTML='<span>Chưa có ảnh. Bật camera và chụp selfie mới.</span>';}
         else{say((r&&r.message)||'Chưa gửi được. Thử lại.',true)}
         ready();
       }).catch(function(e){busy=false;say('Lỗi kết nối: '+e.message,true);ready();});

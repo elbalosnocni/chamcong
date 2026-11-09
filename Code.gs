@@ -492,9 +492,37 @@ return { success: true, thumbs: thumbs };
 }
 function getName(code) {
 var map = staffMap_();
-if (!map) return { listed: false, name: '' };
 var key = String(code || '').trim().toUpperCase();
-return { listed: true, name: map[key] || '' };
+var res = map ? { listed: true, name: map[key] || '' } : { listed: false, name: '' };
+if (key && (!map || map[key])) res.shift = shiftState_(key);
+return res;
+}
+// Trạng thái ca gần nhất của một mã: none | open (đã vào, chưa ra) | stale (vào quá lâu chưa ra) | done (đã vào và ra)
+function shiftState_(code) {
+var sh = getLogSheet_(), last = sh.getLastRow();
+if (last < 2) return { state: 'none' };
+var n = Math.min(last - 1, 1500);
+var rows = sh.getRange(last - n + 1, 1, n, HEADERS.length).getValues();
+var now = new Date();
+for (var i = rows.length - 1; i >= 0; i--) {
+if (String(rows[i][C.CODE - 1]).toUpperCase() !== code) continue;
+var rin = isDate_(rows[i][C.IN - 1]) ? rows[i][C.IN - 1] : null;
+var rout = isDate_(rows[i][C.OUT - 1]) ? rows[i][C.OUT - 1] : null;
+var out = {
+state: 'none',
+timeIn: rin ? fmt_(rin, 'HH:mm') : '', dateIn: rin ? fmt_(rin, 'dd/MM') : '',
+timeOut: rout ? fmt_(rout, 'HH:mm') : '', dateOut: rout ? fmt_(rout, 'dd/MM') : ''
+};
+if (rin && !rout) {
+var h = (now - rin) / 3600000;
+out.state = h >= MAX_SHIFT_HOURS ? 'stale' : 'open';
+out.hours = Math.round(h * 10) / 10;
+} else if (rin && rout) {
+out.state = 'done';
+}
+return out;
+}
+return { state: 'none' };
 }
 function isDate_(v) { return v instanceof Date && !isNaN(v.getTime()); }
 function fmt_(d, f) { return Utilities.formatDate(d, TZ, f); }

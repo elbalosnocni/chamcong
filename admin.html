@@ -34,8 +34,8 @@
   <section id="dashboard-container" class="hidden">
     <header class="sticky top-0 z-20 border-b border-slate-200 bg-white shadow-sm">
       <div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-        <div class="flex items-center gap-3"><img src="logo.png" alt="Logo Oishi" class="h-11 w-auto"><div><h1 class="font-bold">QR Attendance Admin</h1><p class="text-xs text-slate-500">Hệ thống điểm danh Liwayway VN</p></div></div>
-        <button onclick="handleLogout()" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"><i class="fa-solid fa-right-from-bracket mr-1"></i> Đăng xuất</button>
+        <div class="flex items-center gap-3"><img src="logo.png" alt="Logo Oishi" class="h-11 w-auto"><div><h1 class="font-bold">QR Attendance Admin</h1><p class="text-xs text-slate-500">Hệ thống điểm danh Liwayway VN<span id="last-update" class="ml-2 text-slate-400"></span></p></div></div>
+        <div class="flex items-center gap-2"><a href="index.html" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"><i class="fa-solid fa-house mr-1"></i> Trang điểm danh</a><button onclick="handleLogout()" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"><i class="fa-solid fa-right-from-bracket mr-1"></i> Đăng xuất</button></div>
       </div>
     </header>
     <main class="mx-auto max-w-7xl space-y-6 px-4 py-6">
@@ -102,14 +102,15 @@ function handleLogin(){
  }).catch(e=>{btn.disabled=false;btn.textContent='Đăng nhập';err.textContent='Lỗi kết nối: '+e.message;err.classList.remove('hidden');});
 }
 function handleLogout(){const token=adminToken;adminToken='';sessionStorage.removeItem('adminToken');AttendanceAPI.post('logoutAdmin',{token}).catch(()=>{});showLogin();}
-function loadDashboardData(){
- if(!adminToken)return;const spinner=$('loading-spinner'),err=$('page-error');spinner.classList.remove('hidden');err.classList.add('hidden');
+var dashBusy=false;
+function loadDashboardData(silent){
+ if(!adminToken||dashBusy)return;dashBusy=true;const spinner=$('loading-spinner'),err=$('page-error');if(!silent)spinner.classList.remove('hidden');err.classList.add('hidden');
  AttendanceAPI.post('getAdminDashboardData',{token:adminToken,date:$('filter-date').value}).then(res=>{
-  spinner.classList.add('hidden');
+  dashBusy=false;spinner.classList.add('hidden');
   if(!res||!res.success){if(res&&String(res.message||'').includes('Phiên đăng nhập'))handleLogout();err.textContent=(res&&res.message)||'Không tải được dữ liệu.';err.classList.remove('hidden');return;}
   const s=res.summary||{};$('stat-total').textContent=s.totalEmployees||0;$('stat-present').textContent=s.totalCheckedIn||0;$('stat-late').textContent=s.totalLate||0;$('stat-absent').textContent=s.totalAbsent||0;
-  masterData=Array.isArray(res.detailRecords)?res.detailRecords:[];applyFiltersAndSearch();renderAttendanceMap();
- }).catch(e=>{spinner.classList.add('hidden');err.textContent='Lỗi máy chủ: '+e.message;err.classList.remove('hidden');});
+  masterData=Array.isArray(res.detailRecords)?res.detailRecords:[];applyFiltersAndSearch();renderAttendanceMap(!!silent);$('last-update').textContent='· Cập nhật '+new Date().toLocaleTimeString('vi-VN');
+ }).catch(e=>{dashBusy=false;spinner.classList.add('hidden');err.textContent='Lỗi máy chủ: '+e.message;err.classList.remove('hidden');});
 }
 let map=null,markersLayer=null,fenceLayer=null,geofence={lat:null,lng:null,radius:100,enabled:false};
 function initAttendanceMap(){
@@ -138,7 +139,7 @@ function saveGeofenceConfig(){
   geofence=r.geofence;updateGeoStatus();renderAttendanceMap();alert(r.message);
  }).catch(e=>alert(e.message));
 }
-function renderAttendanceMap(){
+function renderAttendanceMap(keepView){
  if(!$('attendance-map'))return;initAttendanceMap();markersLayer.clearLayers();fenceLayer.clearLayers();
  const pts=[];
  if(geofence.enabled){
@@ -154,7 +155,7 @@ function renderAttendanceMap(){
    .bindPopup('<b>'+esc(r.name)+' ('+esc(r.id)+')</b><br>'+esc(r.timeIn)+' · GPS ±'+esc(r.accuracy||'?')+' m<br>Cách tâm: '+esc(r.distance||'?')+' m');
   pts.push(ll);
  });
- if(pts.length)map.fitBounds(pts,{padding:[30,30],maxZoom:17});
+ if(pts.length&&!keepView)map.fitBounds(pts,{padding:[30,30],maxZoom:17});
 }
 function focusAttendancePoint(lat,lng){initAttendanceMap();map.setView([lat,lng],18);setTimeout(()=>map.invalidateSize(),100);}
 function statusBase(item){if(item.status==='Vắng mặt')return 'Vắng mặt';if(String(item.status).includes('Đi trễ'))return 'Đi trễ';return 'Đúng giờ';}
@@ -213,6 +214,18 @@ function enhanceThumbs() {
 }
 new MutationObserver(enhanceThumbs).observe(document.getElementById('table-body'), {childList: true});
 enhanceThumbs();
+</script>
+<script>
+/* Tự làm mới dữ liệu: chỉ khi tab đang mở, đã đăng nhập và đang xem ngày hôm nay */
+const AUTO_REFRESH_MS = 30000; // 30 giây; đổi thành 15000 nếu muốn 15 giây
+function ddTodayStr(){const d=new Date(),p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());}
+function ddAutoRefresh(){
+  if(document.hidden||!adminToken||$('dashboard-container').classList.contains('hidden'))return;
+  const d=$('filter-date').value;if(d&&d!==ddTodayStr())return;
+  loadDashboardData(true);
+}
+setInterval(ddAutoRefresh, AUTO_REFRESH_MS);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)ddAutoRefresh();});
 </script>
 </body>
 </html>
