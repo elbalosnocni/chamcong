@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Quản trị điểm danh</title>
+  <link rel="icon" type="image/png" href="logo.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <style>
@@ -18,7 +19,7 @@
   <section id="login-container" class="min-h-screen flex items-center justify-center p-4">
     <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-lg">
       <div class="mb-6 text-center">
-        <div class="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-2xl text-white"><i class="fa-solid fa-user-shield"></i></div>
+        <img src="logo.png" alt="Logo Oishi" class="mx-auto mb-3 h-20 w-auto">
         <h1 class="text-2xl font-bold">Quản trị hệ thống</h1><p class="mt-1 text-sm text-slate-500">Đăng nhập để xem dữ liệu điểm danh</p>
       </div>
       <div id="login-error" class="mb-4 hidden rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert"></div>
@@ -33,7 +34,7 @@
   <section id="dashboard-container" class="hidden">
     <header class="sticky top-0 z-20 border-b border-slate-200 bg-white shadow-sm">
       <div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-        <div class="flex items-center gap-3"><span class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white"><i class="fa-solid fa-chart-line"></i></span><div><h1 class="font-bold">QR Attendance Admin</h1><p class="text-xs text-slate-500">Hệ thống điểm danh Liwayway VN</p></div></div>
+        <div class="flex items-center gap-3"><img src="logo.png" alt="Logo Oishi" class="h-11 w-auto"><div><h1 class="font-bold">QR Attendance Admin</h1><p class="text-xs text-slate-500">Hệ thống điểm danh Liwayway VN</p></div></div>
         <button onclick="handleLogout()" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"><i class="fa-solid fa-right-from-bracket mr-1"></i> Đăng xuất</button>
       </div>
     </header>
@@ -67,8 +68,8 @@
       <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div class="flex items-center justify-between border-b border-slate-200 px-4 py-4"><h2 class="font-bold">Chi tiết điểm danh</h2><span id="table-count" class="text-xs text-slate-500">0 dòng</span></div>
         <div class="overflow-x-auto"><table class="min-w-full text-left text-sm">
-          <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-4 py-3">Mã NV</th><th class="px-4 py-3">Họ tên</th><th class="px-4 py-3">Phòng ban</th><th class="px-4 py-3">Ngày</th><th class="px-4 py-3">Giờ vào</th><th class="px-4 py-3">Giờ ra</th><th class="px-4 py-3">Ảnh vào</th><th class="px-4 py-3">Ảnh ra</th><th class="px-4 py-3">Số giờ</th><th class="px-4 py-3">Vị trí GPS</th><th class="px-4 py-3">Trạng thái</th></tr></thead>
-          <tbody id="table-body" class="divide-y divide-slate-100"><tr><td colspan="11" class="px-4 py-10 text-center text-slate-400">Chưa có dữ liệu</td></tr></tbody>
+          <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-4 py-3">Mã NV</th><th class="px-4 py-3">Họ tên</th><th class="px-4 py-3">Phòng ban</th><th class="px-4 py-3">Bộ phận</th><th class="px-4 py-3">Chức vụ</th><th class="px-4 py-3">Ngày</th><th class="px-4 py-3">Giờ vào</th><th class="px-4 py-3">Giờ ra</th><th class="px-4 py-3">Ảnh vào</th><th class="px-4 py-3">Ảnh ra</th><th class="px-4 py-3">Số giờ</th><th class="px-4 py-3">Vị trí GPS</th><th class="px-4 py-3">Trạng thái</th></tr></thead>
+          <tbody id="table-body" class="divide-y divide-slate-100"><tr><td colspan="13" class="px-4 py-10 text-center text-slate-400">Chưa có dữ liệu</td></tr></tbody>
         </table></div>
         <div id="loading-spinner" class="hidden border-t border-slate-100 px-4 py-3 text-center text-sm text-blue-600"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tải dữ liệu...</div>
       </section>
@@ -157,7 +158,7 @@ function renderAttendanceMap(){
 }
 function focusAttendancePoint(lat,lng){initAttendanceMap();map.setView([lat,lng],18);setTimeout(()=>map.invalidateSize(),100);}
 function statusBase(item){if(item.status==='Vắng mặt')return 'Vắng mặt';if(String(item.status).includes('Đi trễ'))return 'Đi trễ';return 'Đúng giờ';}
-function applyFiltersAndSearch(){const q=$('search-input').value.toLocaleLowerCase('vi').trim(),f=$('filter-status').value;const rows=masterData.filter(x=>{const hay=[x.id,x.name,x.dept].join(' ').toLocaleLowerCase('vi');const matchText=hay.includes(q);const matchStatus=f==='ALL'||(f==='Cảnh báo'?!!x.warning:statusBase(x)===f);return matchText&&matchStatus;});$('table-count').textContent=rows.length+' dòng';if(!rows.length){$('table-body').innerHTML='<tr><td colspan="11" class="px-4 py-10 text-center text-slate-400">Không tìm thấy dữ liệu phù hợp</td></tr>';return;}$('table-body').innerHTML=rows.map(r=>{const status=statusBase(r),cls=status==='Vắng mặt'?'bg-rose-50 text-rose-700':status==='Đi trễ'?'bg-amber-50 text-amber-700':'bg-emerald-50 text-emerald-700';const photo=(id,url,label)=>(id||url)?`<button type="button" class="photo-link text-blue-600 underline" data-id="${esc(id||'')}" data-url="${esc(url||'')}" data-name="${esc(r.name+' - '+label)}">Xem ảnh</button>`:'<span class="text-slate-300">—</span>';return `<tr class="hover:bg-slate-50"><td class="whitespace-nowrap px-4 py-3 font-medium">${esc(r.id)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.name)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.dept)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.date)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeIn)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeOut)}</td><td class="px-4 py-3">${photo(r.photoInId,r.photoIn,'Ảnh vào')}</td><td class="px-4 py-3">${photo(r.photoOutId,r.photoOut,'Ảnh ra')}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.hours)}</td><td class="whitespace-nowrap px-4 py-3">${(r.latIn!=null||r.latOut!=null)?`<div>${r.latIn!=null?`<button class="text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.latIn)},${Number(r.lngIn)})">Vào: ${esc(r.distanceIn||'?')} m</button><div class="text-xs text-slate-500">±${esc(r.accuracyIn||'?')} m</div>`:''}${r.latOut!=null?`<button class="mt-1 text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.latOut)},${Number(r.lngOut)})">Ra: ${esc(r.distanceOut||'?')} m</button><div class="text-xs text-slate-500">±${esc(r.accuracyOut||'?')} m</div>`:''}</div>`:'—'}</td><td class="whitespace-nowrap px-4 py-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold ${cls}">${esc(r.status)}</span>${r.warning?`<p class="mt-1 max-w-xs text-xs text-amber-700" title="${esc(r.warning)}">${esc(r.warning)}</p>`:''}</td></tr>`;}).join('');}
+function applyFiltersAndSearch(){const q=$('search-input').value.toLocaleLowerCase('vi').trim(),f=$('filter-status').value;const rows=masterData.filter(x=>{const hay=[x.id,x.name,x.dept,x.bophan,x.chucvu].join(' ').toLocaleLowerCase('vi');const matchText=hay.includes(q);const matchStatus=f==='ALL'||(f==='Cảnh báo'?!!x.warning:statusBase(x)===f);return matchText&&matchStatus;});$('table-count').textContent=rows.length+' dòng';if(!rows.length){$('table-body').innerHTML='<tr><td colspan="13" class="px-4 py-10 text-center text-slate-400">Không tìm thấy dữ liệu phù hợp</td></tr>';return;}$('table-body').innerHTML=rows.map(r=>{const status=statusBase(r),cls=status==='Vắng mặt'?'bg-rose-50 text-rose-700':status==='Đi trễ'?'bg-amber-50 text-amber-700':'bg-emerald-50 text-emerald-700';const photo=(id,url,label)=>(id||url)?`<button type="button" class="photo-link text-blue-600 underline" data-id="${esc(id||'')}" data-url="${esc(url||'')}" data-name="${esc(r.name+' - '+label)}">Xem ảnh</button>`:'<span class="text-slate-300">—</span>';return `<tr class="hover:bg-slate-50"><td class="whitespace-nowrap px-4 py-3 font-medium">${esc(r.id)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.name)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.dept)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.bophan)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.chucvu)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.date)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeIn)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeOut)}</td><td class="px-4 py-3">${photo(r.photoInId,r.photoIn,'Ảnh vào')}</td><td class="px-4 py-3">${photo(r.photoOutId,r.photoOut,'Ảnh ra')}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.hours)}</td><td class="whitespace-nowrap px-4 py-3">${(r.latIn!=null||r.latOut!=null)?`<div>${r.latIn!=null?`<button class="text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.latIn)},${Number(r.lngIn)})">Vào: ${esc(r.distanceIn||'?')} m</button><div class="text-xs text-slate-500">±${esc(r.accuracyIn||'?')} m</div>`:''}${r.latOut!=null?`<button class="mt-1 text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.latOut)},${Number(r.lngOut)})">Ra: ${esc(r.distanceOut||'?')} m</button><div class="text-xs text-slate-500">±${esc(r.accuracyOut||'?')} m</div>`:''}</div>`:'—'}</td><td class="whitespace-nowrap px-4 py-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold ${cls}">${esc(r.status)}</span>${r.warning?`<p class="mt-1 max-w-xs text-xs text-amber-700" title="${esc(r.warning)}">${esc(r.warning)}</p>`:''}</td></tr>`;}).join('');}
 $('table-body').addEventListener('click',e=>{const b=e.target.closest('.photo-link');if(b)openImageModal(b.dataset.id,b.dataset.url,b.dataset.name);});
 function openImageModal(fileId,fallbackUrl,name){
  $('modal-title').textContent=name;$('modal-img').src='';$('image-modal').classList.remove('hidden');$('image-modal').classList.add('flex');
@@ -166,12 +167,13 @@ function openImageModal(fileId,fallbackUrl,name){
 }
 function closeImageModal(){$('image-modal').classList.add('hidden');$('image-modal').classList.remove('flex');$('modal-img').src='';}
 function csvCell(v){return '"'+String(v==null?'':v).replace(/"/g,'""')+'"';}
-function exportToExcel(){const q=$('search-input').value.toLocaleLowerCase('vi').trim(),f=$('filter-status').value;const rows=masterData.filter(x=>[x.id,x.name,x.dept].join(' ').toLocaleLowerCase('vi').includes(q)&&(f==='ALL'||(f==='Cảnh báo'?!!x.warning:statusBase(x)===f)));if(!rows.length){alert('Không có dữ liệu để xuất.');return;}const header=['Mã nhân viên','Họ tên','Phòng ban','Ngày','Giờ vào','Giờ ra','Số giờ','Trạng thái','Cảnh báo','Ảnh vào','Ảnh ra','Vĩ độ','Kinh độ','Sai số GPS','Khoảng cách GPS'];const lines=[header,...rows.map(r=>[r.id,r.name,r.dept,r.date,r.timeIn,r.timeOut,r.hours,r.status,r.warning,r.photoIn,r.photoOut,r.lat,r.lng,r.accuracy,r.distance])].map(row=>row.map(csvCell).join(','));const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='BaoCao_DiemDanh_'+$('filter-date').value+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);}
-
+function exportToExcel(){const q=$('search-input').value.toLocaleLowerCase('vi').trim(),f=$('filter-status').value;const rows=masterData.filter(x=>[x.id,x.name,x.dept,x.bophan,x.chucvu].join(' ').toLocaleLowerCase('vi').includes(q)&&(f==='ALL'||(f==='Cảnh báo'?!!x.warning:statusBase(x)===f)));if(!rows.length){alert('Không có dữ liệu để xuất.');return;}const header=['Mã nhân viên','Họ tên','Phòng ban','Bộ phận','Chức vụ','Ngày','Giờ vào','Giờ ra','Số giờ','Trạng thái','Cảnh báo','Ảnh vào','Ảnh ra','Vĩ độ','Kinh độ','Sai số GPS','Khoảng cách GPS'];const lines=[header,...rows.map(r=>[r.id,r.name,r.dept,r.bophan,r.chucvu,r.date,r.timeIn,r.timeOut,r.hours,r.status,r.warning,r.photoIn,r.photoOut,r.lat,r.lng,r.accuracy,r.distance])].map(row=>row.map(csvCell).join(','));const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='BaoCao_DiemDanh_'+$('filter-date').value+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);}
+</script>
+<script>
+/* Ảnh thu nhỏ trong bảng: tải theo lô khi cuộn tới, bấm vào ảnh để xem ảnh lớn */
 const thumbCache = new Map();
 let thumbQueue = [], thumbTimer = null, thumbBusy = false;
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-
 const thumbObserver = new IntersectionObserver(entries => {
   entries.forEach(en => {
     if (!en.isIntersecting) return;
@@ -182,7 +184,6 @@ const thumbObserver = new IntersectionObserver(entries => {
     clearTimeout(thumbTimer); thumbTimer = setTimeout(flushThumbs, 150);
   });
 }, {rootMargin: '200px'});
-
 async function flushThumbs() {
   if (thumbBusy) return;
   thumbBusy = true;
@@ -199,7 +200,6 @@ async function flushThumbs() {
   }
   thumbBusy = false;
 }
-
 function enhanceThumbs() {
   document.querySelectorAll('#table-body .photo-link:not([data-enh])').forEach(b => {
     b.dataset.enh = '1';

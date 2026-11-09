@@ -1,16 +1,75 @@
 <!doctype html>
 <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Mã QR điểm danh - Liwayway VN</title>
+<link rel="icon" type="image/png" href="logo.png">
 <style>
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#eef2ef;color:#17231d;font-family:system-ui,sans-serif;display:grid;place-items:center;padding:20px}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#eef2ef;color:#17231d;font-family:system-ui,sans-serif;display:grid;place-items:center;padding:20px}
 main{width:min(560px,100%);background:#fff;border:1px solid #dce5de;border-radius:20px;padding:28px;text-align:center;box-shadow:0 12px 40px #18332212}
-h1{font-size:1.5rem;margin:0 0 8px}p{color:#607067;line-height:1.5}#qr{display:grid;place-items:center;margin:22px auto;min-height:280px}#qr img{max-width:100%;height:auto}a{color:#087443;overflow-wrap:anywhere}
+.logo{display:block;height:96px;width:auto;margin:0 auto 14px}
+h1{font-size:1.5rem;margin:0 0 8px}
+p{color:#607067;line-height:1.5;margin:0}
+#qr{display:grid;place-items:center;margin:22px auto;min-height:280px}
+#qr img{max-width:100%;height:auto}
+#url{font-size:.85rem}
+a{color:#087443;overflow-wrap:anywhere}
+.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px}
 button{border:0;border-radius:10px;background:#087443;color:white;font-weight:700;padding:12px 18px;cursor:pointer}
+button.alt{background:#fff;color:#087443;border:1.5px solid #087443}
+@page{size:A4;margin:14mm}
+@media print{
+  body{background:#fff;padding:0;min-height:0;display:block}
+  main{width:100%;border:0;box-shadow:none;padding:0}
+  .logo{height:150px;margin-bottom:24px}
+  h1{font-size:2rem}
+  main>p:first-of-type{font-size:1.25rem;color:#17231d}
+  #qr{margin:36px auto}
+  #qr img{width:100mm;height:100mm}
+  #url,.actions{display:none}
+}
 </style><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script></head>
-<body><main><h1>CÔNG TY CỔ PHẦN LIWAYWAY VN</h1><p>Quét mã QR để mở trang điểm danh nhân viên</p><div id="qr"></div><p id="url"></p><button id="download">Tải mã QR PNG</button></main>
+<body><main>
+<img class="logo" src="logo.png" alt="Logo Oishi">
+<h1>CÔNG TY CỔ PHẦN LIWAYWAY VN</h1>
+<p>Quét mã QR để mở trang điểm danh nhân viên</p>
+<div id="qr"></div>
+<p id="url"></p>
+<div class="actions">
+  <button id="print" type="button">In mã QR</button>
+  <button id="download" type="button" class="alt">Tải ảnh PNG</button>
+</div>
+</main>
 <script>
 const target=new URL('./index.html',location.href).href;
 document.getElementById('url').innerHTML='<a href="'+target+'">'+target+'</a>';
-new QRCode(document.getElementById('qr'),{text:target,width:320,height:320,correctLevel:QRCode.CorrectLevel.M});
-document.getElementById('download').onclick=()=>{const img=document.querySelector('#qr img');const canvas=document.querySelector('#qr canvas');const a=document.createElement('a');a.href=img?img.src:canvas.toDataURL('image/png');a.download='QR_DiemDanh_Liwayway.png';a.click();};
+// Tạo QR 400px (vẽ lên ảnh tải về ở 800px để giữ nét)
+new QRCode(document.getElementById('qr'),{text:target,width:400,height:400,correctLevel:QRCode.CorrectLevel.M});
+
+document.getElementById('print').onclick=()=>window.print();
+
+// Ảnh PNG gồm logo + tên công ty + QR, dùng để in dán tại điểm danh
+document.getElementById('download').onclick=async()=>{
+  const qrCanvas=document.querySelector('#qr canvas');
+  const qrImg=document.querySelector('#qr img');
+  const save=url=>{const a=document.createElement('a');a.href=url;a.download='QR_DiemDanh_Liwayway.png';a.click();};
+  try{
+    const logo=new Image();logo.src='logo.png';
+    await new Promise((ok,fail)=>{logo.onload=ok;logo.onerror=fail;});
+    const W=1200,H=1600,c=document.createElement('canvas');c.width=W;c.height=H;
+    const x=c.getContext('2d');
+    x.fillStyle='#fff';x.fillRect(0,0,W,H);
+    const lh=260,lw=logo.width/logo.height*lh;
+    x.drawImage(logo,(W-lw)/2,110,lw,lh);
+    x.fillStyle='#17231d';x.textAlign='center';
+    x.font='700 52px system-ui,sans-serif';x.fillText('CÔNG TY CỔ PHẦN LIWAYWAY VN',W/2,500);
+    x.fillStyle='#607067';x.font='400 38px system-ui,sans-serif';x.fillText('Quét mã QR để mở trang điểm danh nhân viên',W/2,570);
+    x.imageSmoothingEnabled=false;
+    const src=qrCanvas||qrImg;
+    x.drawImage(src,(W-800)/2,650,800,800);
+    save(c.toDataURL('image/png'));
+  }catch(e){
+    // Không ghép được logo (ví dụ mở file trực tiếp): tải riêng mã QR
+    save(qrImg?qrImg.src:qrCanvas.toDataURL('image/png'));
+  }
+};
 </script></body></html>

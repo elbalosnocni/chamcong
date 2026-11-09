@@ -22,7 +22,9 @@ Frontend chạy trên GitHub Pages (HTTPS); backend Google Apps Script lưu dữ
 4. Chạy `setup()` một lần và cấp quyền truy cập Google Sheets/Drive.
    - Tự tạo/cập nhật sheet `ChamCong`, `NhanVien`, thư mục Drive ảnh `DiemDanh_Anh`.
    - Sheet `ChamCong` cũ được bổ sung các cột GPS riêng cho vào/ra ở cuối, dữ liệu cũ không bị xóa.
-5. Trong `NhanVien`, nhập mã nhân viên ở cột A và họ tên ở cột B.
+5. Trong `NhanVien`, nhập mã nhân viên (`manv`), họ tên (`hoten`), rồi `phongban`, `bophan`, `chucvu`.
+   Hệ thống tìm cột theo tiêu đề dòng 1 (không phân biệt hoa/thường, có dấu hay không); nếu không thấy tiêu đề thì dùng thứ tự cột A-E.
+   Trang admin hiển thị riêng 3 cột Phòng ban, Bộ phận, Chức vụ và đưa cả 3 vào bộ lọc tìm kiếm và file xuất.
 6. **Triển khai → Quản lý bản triển khai → Chỉnh sửa/Tạo bản triển khai → Ứng dụng web**:
    - Thực thi với tư cách: **Tôi**
    - Ai có quyền truy cập: **Bất kỳ ai**
@@ -73,3 +75,7 @@ Khi cập nhật `Code.gs`, chọn **Triển khai → Quản lý bản triển k
 - Thử ở trong vòng 100 m và ngoài vòng 100 m; ngoài vùng phải bị backend từ chối.
 - Thử Vào → Ra, kiểm tra ảnh và tọa độ hai lượt hiển thị đúng trong dashboard.
 - Thử đăng xuất/đăng nhập Admin và tải ảnh khi thư mục Drive vẫn để riêng tư.
+
+
+## Đổi logo
+Cả `index.html`, `admin.html` và `qr.html` dùng chung file `logo.png` cùng thư mục. Muốn đổi logo, chỉ cần upload file ảnh mới (PNG nền trong suốt, tỷ lệ ngang) đặt tên `logo.png` đè lên file cũ, rồi tải lại trang bằng Ctrl+F5.

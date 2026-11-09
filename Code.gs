@@ -70,17 +70,18 @@ function doPost(e) {
     else if (action === 'logoutAdmin') result = logoutAdmin(d.token);
     else if (action === 'getAdminDashboardData') result = getAdminDashboardData(d.token, d.date);
     else if (action === 'submitCheckin') result = submitCheckin(d);
-    else if (action === 'saveGeofence') result = saveGeofence(d.token, d.lat, d.lng, d.radius);
+    else if (action === 'getName') result = getName(d.code);
     else if (action === 'getPhoto') result = getPhoto(d.token, d.fileId);
     else if (action === 'getThumbs') result = getThumbs(d.token, d.ids);
-    else if (action === 'getName') result = getName(d.code);
+    else if (action === 'saveGeofence') result = saveGeofence(d.token, d.lat, d.lng, d.radius);
     else result = {success:false, ok:false, message:'API action không hợp lệ.'};
     
     // Trả về HTML chứa script postMessage an toàn
     var htmlContent = '<!doctype html><meta charset="utf-8"><body>' +
       '<script>' +
       '  var responseData = { type: "DD_API_RESULT", nonce: ' + JSON.stringify(nonce) + ', result: ' + JSON.stringify(result).replace(/</g, '\\u003c') + ' };' +
-      '  window.top.postMessage(responseData, "*");' +
+      '  try { window.top.postMessage(responseData, "*"); } catch (e) {}' +
+      '  try { window.parent.postMessage(responseData, "*"); } catch (e) {}' +
       '<\/script></body>';
       
     return HtmlService.createHtmlOutput(htmlContent)
@@ -90,7 +91,9 @@ function doPost(e) {
     var errorResult = { success: false, ok: false, message: 'Lỗi hệ thống: ' + err.toString() };
     var errorHtml = '<!doctype html><meta charset="utf-8"><body>' +
       '<script>' +
-      '  window.top.postMessage({ type: "DD_API_RESULT", nonce: ' + JSON.stringify(nonce) + ', result: ' + JSON.stringify(errorResult).replace(/</g, '\\u003c') + ' }, "*");' +
+      '  var m = { type: "DD_API_RESULT", nonce: ' + JSON.stringify(nonce) + ', result: ' + JSON.stringify(errorResult).replace(/</g, '\\u003c') + ' };' +
+      '  try { window.top.postMessage(m, "*"); } catch (e) {}' +
+      '  try { window.parent.postMessage(m, "*"); } catch (e) {}' +
       '<\/script></body>';
       
     return HtmlService.createHtmlOutput(errorHtml)
@@ -143,11 +146,19 @@ function getAdminDashboardData(token, targetDateStr) {
     if (sheetNV) {
       let lastRowNV = sheetNV.getLastRow();
       if (lastRowNV >= 2) {
-        let nvData = sheetNV.getRange(2, 1, lastRowNV - 1, 2).getValues();
+        const cols = staffColumns_(sheetNV);
+        let nvData = sheetNV.getRange(2, 1, lastRowNV - 1, Math.max(sheetNV.getLastColumn(), 5)).getValues();
+        const cell = (r, i) => String(r[i] === undefined || r[i] === null ? '' : r[i]).trim();
         nvData.forEach(r => {
-          let code = String(r[0]).trim().toUpperCase();
+          let code = cell(r, cols.code).toUpperCase();
           if (code) {
-            allEmployees[code] = { id: code, name: String(r[1]).trim(), dept: "Nhà máy Liwayway" };
+            allEmployees[code] = {
+              id: code,
+              name: cell(r, cols.name),
+              phongban: cell(r, cols.phongban),
+              bophan: cell(r, cols.bophan),
+              chucvu: cell(r, cols.chucvu)
+            };
           }
         });
       }
@@ -225,7 +236,9 @@ function getAdminDashboardData(token, targetDateStr) {
             records.push({
               id: code,
               name: row[C.NAME - 1] || (allEmployees[code] ? allEmployees[code].name : ""),
-              dept: allEmployees[code] ? allEmployees[code].dept : "Nhân sự ngoài danh sách",
+              dept: allEmployees[code] ? allEmployees[code].phongban : "Nhân sự ngoài danh sách",
+              bophan: allEmployees[code] ? allEmployees[code].bophan : "",
+              chucvu: allEmployees[code] ? allEmployees[code].chucvu : "",
               date: formattedRowDate,
               timeIn: timeInStr,
               timeOut: timeOutStr,
@@ -254,7 +267,9 @@ function getAdminDashboardData(token, targetDateStr) {
         records.push({
           id: code,
           name: allEmployees[code].name,
-          dept: allEmployees[code].dept,
+          dept: allEmployees[code].phongban,
+          bophan: allEmployees[code].bophan,
+          chucvu: allEmployees[code].chucvu,
           date: filterDateStr,
           timeIn: "--:--",
           timeOut: "--:--",
@@ -317,29 +332,6 @@ if (!/^image\/(jpeg|png|webp)$/.test(mime)) return {success:false,message:'Tệp
 return {success:true,dataUrl:'data:'+mime+';base64,'+Utilities.base64Encode(blob.getBytes())};
 } catch(err) { return {success:false,message:'Không đọc được ảnh. Kiểm tra quyền Drive.'}; }
 }
-
-function getThumbs(token, ids) {
-  if (!isAdminTokenValid_(token)) return {success:false, message:'Phiên đăng nhập hết hạn.'};
-  ids = (Array.isArray(ids) ? ids : []).slice(0, 8);
-  var cache = CacheService.getScriptCache(), thumbs = {};
-  ids.forEach(function(id) {
-    id = String(id || '');
-    if (!/^[A-Za-z0-9_-]{10,}$/.test(id)) return;
-    var key = 'thumb:' + id, hit = cache.get(key);
-    if (hit) { thumbs[id] = hit; return; }
-    try {
-      var file = DriveApp.getFileById(id);
-      var blob = file.getThumbnail() || file.getBlob();
-      var mime = blob.getContentType();
-      if (!/^image\/(jpeg|png|webp)$/.test(mime)) return;
-      var dataUrl = 'data:' + mime + ';base64,' + Utilities.base64Encode(blob.getBytes());
-      thumbs[id] = dataUrl;
-      if (dataUrl.length < 90000) cache.put(key, dataUrl, 21600);
-    } catch (err) {}
-  });
-  return {success:true, thumbs:thumbs};
-}
-
 function getGeofence_() {
 var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CauHinh');
 var out = {lat:null, lng:null, radius:100};
@@ -419,9 +411,9 @@ var ss = SpreadsheetApp.getActiveSpreadsheet();
 var sh = ss.getSheetByName(SHEET_STAFF);
 if (!sh) {
 sh = ss.insertSheet(SHEET_STAFF);
-sh.appendRow(['Mã NV', 'Họ tên']);
+sh.appendRow(['Mã NV', 'Họ tên', 'Phòng ban', 'Bộ phận', 'Chức vụ']);
 sh.setFrozenRows(1);
-sh.getRange(1, 1, 1, 2).setFontWeight('bold');
+sh.getRange(1, 1, 1, 5).setFontWeight('bold');
 }
 return sh;
 }
@@ -446,6 +438,47 @@ var code = String(r[0]).trim().toUpperCase();
 if (code) map[code] = String(r[1]).trim();
 });
 return Object.keys(map).length ? map : null;
+}
+function normHeader_(s) {
+return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]/g, '');
+}
+// Tìm cột theo tiêu đề dòng 1 (manv, hoten, phongban, bophan, chucvu). Không thấy tiêu đề thì dùng vị trí A-E.
+function staffColumns_(sh) {
+var lastCol = Math.max(sh.getLastColumn(), 5);
+var head = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(normHeader_);
+function find(names, def) {
+for (var i = 0; i < head.length; i++) if (names.indexOf(head[i]) !== -1) return i;
+return def;
+}
+return {
+code: find(['manv', 'manhanvien', 'ma'], 0),
+name: find(['hoten', 'hovaten', 'ten'], 1),
+phongban: find(['phongban'], 2),
+bophan: find(['bophan'], 3),
+chucvu: find(['chucvu'], 4)
+};
+}
+// Ảnh thu nhỏ cho bảng admin (gửi theo lô, cache 6 giờ)
+function getThumbs(token, ids) {
+if (!isAdminTokenValid_(token)) return { success: false, message: 'Phiên đăng nhập hết hạn.' };
+ids = (Array.isArray(ids) ? ids : []).slice(0, 8);
+var cache = CacheService.getScriptCache(), thumbs = {};
+ids.forEach(function (id) {
+id = String(id || '');
+if (!/^[A-Za-z0-9_-]{10,}$/.test(id)) return;
+var key = 'thumb:' + id, hit = cache.get(key);
+if (hit) { thumbs[id] = hit; return; }
+try {
+var file = DriveApp.getFileById(id);
+var blob = file.getThumbnail() || file.getBlob();
+var mime = blob.getContentType();
+if (!/^image\/(jpeg|png|webp)$/.test(mime)) return;
+var dataUrl = 'data:' + mime + ';base64,' + Utilities.base64Encode(blob.getBytes());
+thumbs[id] = dataUrl;
+if (dataUrl.length < 90000) cache.put(key, dataUrl, 21600);
+} catch (err) {}
+});
+return { success: true, thumbs: thumbs };
 }
 function getName(code) {
 var map = staffMap_();
