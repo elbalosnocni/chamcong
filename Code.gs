@@ -7,6 +7,16 @@ var TZ = 'Asia/Ho_Chi_Minh';
 var SHEET_LOG = 'ChamCong';        // Sheet chấm công, mỗi ca một dòng
 var SHEET_STAFF = 'NhanVien';      // Sheet danh sách nhân viên
 var FOLDER_NAME = 'DiemDanh_Anh';  // Thư mục Drive chứa ảnh selfie
+var SPREADSHEET_ID = '';           // Dán ID Google Sheet vào đây (đoạn giữa /d/ và /edit trong URL). Để trống = dùng sheet gắn với script.
+
+// Mở Google Sheet theo ID; không có ID thì dùng sheet đang gắn với script.
+function getSS_() {
+  var id = SPREADSHEET_ID || PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (id) return SpreadsheetApp.openById(String(id).trim());
+  var active = SpreadsheetApp.getActiveSpreadsheet();
+  if (!active) throw new Error('Chưa cấu hình SPREADSHEET_ID trong Code.gs.');
+  return active;
+}
 var STALE_SECONDS = 180;           // Ảnh chụp cũ hơn mức này bị gắn cờ
 var MIN_GAP_SECONDS = 60;          // Chặn bấm gửi trùng trong khoảng này
 var MAX_SHIFT_HOURS = 16;          // Ca dài tối đa
@@ -333,7 +343,7 @@ return {success:true,dataUrl:'data:'+mime+';base64,'+Utilities.base64Encode(blob
 } catch(err) { return {success:false,message:'Không đọc được ảnh. Kiểm tra quyền Drive.'}; }
 }
 function getGeofence_() {
-var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CauHinh');
+var sh = getSS_().getSheetByName('CauHinh');
 var out = {lat:null, lng:null, radius:100};
 if (!sh) return out;
 var lastRow = sh.getLastRow();
@@ -360,7 +370,7 @@ if (!isAdminTokenValid_(token)) return {success:false,message:'Phiên đăng nh�
 lat=Number(lat);lng=Number(lng);radius=Number(radius);
 if(!isFinite(lat)||lat < -90||lat>90||!isFinite(lng)||lng < -180||lng>180||radius !== 100)
 return {success:false,message:'Tọa độ không hợp lệ. Bán kính hệ thống được cố định 100 m.'};
-var ss=SpreadsheetApp.getActiveSpreadsheet(),sh=ss.getSheetByName('CauHinh')||ss.insertSheet('CauHinh');
+var ss=getSS_(),sh=ss.getSheetByName('CauHinh')||ss.insertSheet('CauHinh');
 sh.clearContents(); // Sửa từ clear() sang clearContents để giữ định dạng cột
 sh.getRange(1,1,3,2).setValues([['GEOFENCE_LAT',lat],['GEOFENCE_LNG',lng],['GEOFENCE_RADIUS',radius]]);
 return {success:true,message:'Đã lưu vị trí và bán kính điểm danh.',geofence:{lat:lat,lng:lng,radius:radius,enabled:true}};
@@ -381,14 +391,14 @@ function distanceMeters_(lat1, lon1, lat2, lon2) {
 }
 
 function setup() {
-SpreadsheetApp.getActiveSpreadsheet().setSpreadsheetTimeZone(TZ);
+getSS_().setSpreadsheetTimeZone(TZ);
 getLogSheet_();
 getStaffSheet_();
 getFolder_();
 return 'Đã sẵn sàng';
 }
 function getLogSheet_() {
-var ss = SpreadsheetApp.getActiveSpreadsheet();
+var ss = getSS_();
 var sh = ss.getSheetByName(SHEET_LOG);
 if (!sh) {
 sh = ss.insertSheet(SHEET_LOG);
@@ -407,7 +417,7 @@ sh.getRange(1,1,1,HEADERS.length).setValues([HEADERS]);
 return sh;
 }
 function getStaffSheet_() {
-var ss = SpreadsheetApp.getActiveSpreadsheet();
+var ss = getSS_();
 var sh = ss.getSheetByName(SHEET_STAFF);
 if (!sh) {
 sh = ss.insertSheet(SHEET_STAFF);
