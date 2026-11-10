@@ -68,8 +68,8 @@
       <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div class="flex items-center justify-between border-b border-slate-200 px-4 py-4"><h2 class="font-bold">Chi tiết điểm danh</h2><span id="table-count" class="text-xs text-slate-500">0 dòng</span></div>
         <div class="overflow-x-auto"><table class="min-w-full text-left text-sm">
-          <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-4 py-3">Mã NV</th><th class="px-4 py-3">Họ tên</th><th class="px-4 py-3">Phòng ban</th><th class="px-4 py-3">Bộ phận</th><th class="px-4 py-3">Chức vụ</th><th class="px-4 py-3">Ngày</th><th class="px-4 py-3">Giờ vào</th><th class="px-4 py-3">Giờ ra</th><th class="px-4 py-3">Ảnh vào</th><th class="px-4 py-3">Ảnh ra</th><th class="px-4 py-3">Số giờ</th><th class="px-4 py-3">Vị trí GPS</th><th class="px-4 py-3">Trạng thái</th></tr></thead>
-          <tbody id="table-body" class="divide-y divide-slate-100"><tr><td colspan="13" class="px-4 py-10 text-center text-slate-400">Chưa có dữ liệu</td></tr></tbody>
+          <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-4 py-3">Mã NV</th><th class="px-4 py-3">Họ tên</th><th class="px-4 py-3">Phòng ban</th><th class="px-4 py-3">Bộ phận</th><th class="px-4 py-3">Chức vụ</th><th class="px-4 py-3">Ngày</th><th class="px-4 py-3">Giờ vào</th><th class="px-4 py-3">Giờ ra</th><th class="px-4 py-3">Ảnh vào</th><th class="px-4 py-3">Ảnh ra</th><th class="px-4 py-3">Số giờ</th><th class="px-4 py-3">Vị trí GPS</th><th class="px-4 py-3">Trạng thái</th><th class="px-4 py-3">Thao tác</th></tr></thead>
+          <tbody id="table-body" class="divide-y divide-slate-100"><tr><td colspan="14" class="px-4 py-10 text-center text-slate-400">Chưa có dữ liệu</td></tr></tbody>
         </table></div>
         <div id="loading-spinner" class="hidden border-t border-slate-100 px-4 py-3 text-center text-sm text-blue-600"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tải dữ liệu...</div>
       </section>
@@ -79,6 +79,21 @@
 
   <div id="image-modal" class="modal fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4" onclick="if(event.target===this)closeImageModal()">
     <div class="w-full max-w-xl rounded-xl bg-white p-4"><div class="mb-3 flex items-center justify-between"><h3 id="modal-title" class="font-semibold">Ảnh selfie</h3><button onclick="closeImageModal()" class="rounded px-3 py-1 text-xl" aria-label="Đóng">&times;</button></div><img id="modal-img" alt="Ảnh selfie điểm danh" class="mx-auto max-h-[75vh] max-w-full rounded-lg object-contain"></div>
+  </div>
+
+  <div id="cancel-modal" class="modal fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4" onclick="if(event.target===this)closeCancel()">
+    <div class="w-full max-w-md rounded-xl bg-white p-5">
+      <div class="mb-2 flex items-center justify-between"><h3 class="font-semibold">Hủy điểm danh</h3><button onclick="closeCancel()" class="rounded px-3 py-1 text-xl" aria-label="Đóng">&times;</button></div>
+      <p id="cancel-info" class="mb-3 text-sm text-slate-600"></p>
+      <div class="mb-3 space-y-2 text-sm">
+        <label id="cancel-out-wrap" class="flex items-start gap-2"><input type="radio" name="cancel-kind" value="out" class="mt-1"><span>Chỉ hủy <b>lượt ra</b> (nhân viên chụp lại và ra ca lại)</span></label>
+        <label class="flex items-start gap-2"><input type="radio" name="cancel-kind" value="all" class="mt-1"><span>Hủy <b>cả ca</b> (xóa dòng, nhân viên vào ca lại từ đầu)</span></label>
+      </div>
+      <label class="block text-sm font-medium">Lý do hủy<input id="cancel-reason" maxlength="200" placeholder="Ví dụ: chụp nhầm ảnh" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"></label>
+      <p id="cancel-error" class="mt-2 hidden text-sm text-red-600"></p>
+      <div class="mt-4 flex justify-end gap-2"><button onclick="closeCancel()" class="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Đóng</button><button id="cancel-submit" onclick="submitCancel()" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Xác nhận hủy</button></div>
+      <p class="mt-3 text-xs text-slate-500">Bản ghi gốc được lưu trong sheet DaHuy để đối chiếu.</p>
+    </div>
   </div>
 
 <script>
@@ -159,7 +174,7 @@ function renderAttendanceMap(keepView){
 }
 function focusAttendancePoint(lat,lng){initAttendanceMap();map.setView([lat,lng],18);setTimeout(()=>map.invalidateSize(),100);}
 function statusBase(item){if(item.status==='Vắng mặt')return 'Vắng mặt';if(String(item.status).includes('Đi trễ'))return 'Đi trễ';return 'Đúng giờ';}
-function applyFiltersAndSearch(){const q=$('search-input').value.toLocaleLowerCase('vi').trim(),f=$('filter-status').value;const rows=masterData.filter(x=>{const hay=[x.id,x.name,x.dept,x.bophan,x.chucvu].join(' ').toLocaleLowerCase('vi');const matchText=hay.includes(q);const matchStatus=f==='ALL'||(f==='Cảnh báo'?!!x.warning:statusBase(x)===f);return matchText&&matchStatus;});$('table-count').textContent=rows.length+' dòng';if(!rows.length){$('table-body').innerHTML='<tr><td colspan="13" class="px-4 py-10 text-center text-slate-400">Không tìm thấy dữ liệu phù hợp</td></tr>';return;}$('table-body').innerHTML=rows.map(r=>{const status=statusBase(r),cls=status==='Vắng mặt'?'bg-rose-50 text-rose-700':status==='Đi trễ'?'bg-amber-50 text-amber-700':'bg-emerald-50 text-emerald-700';const photo=(id,url,label)=>(id||url)?`<button type="button" class="photo-link text-blue-600 underline" data-id="${esc(id||'')}" data-url="${esc(url||'')}" data-name="${esc(r.name+' - '+label)}">Xem ảnh</button>`:'<span class="text-slate-300">—</span>';return `<tr class="hover:bg-slate-50"><td class="whitespace-nowrap px-4 py-3 font-medium">${esc(r.id)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.name)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.dept)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.bophan)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.chucvu)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.date)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeIn)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeOut)}</td><td class="px-4 py-3">${photo(r.photoInId,r.photoIn,'Ảnh vào')}</td><td class="px-4 py-3">${photo(r.photoOutId,r.photoOut,'Ảnh ra')}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.hours)}</td><td class="whitespace-nowrap px-4 py-3">${(r.latIn!=null||r.latOut!=null)?`<div>${r.latIn!=null?`<button class="text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.latIn)},${Number(r.lngIn)})">Vào: ${esc(r.distanceIn||'?')} m</button><div class="text-xs text-slate-500">±${esc(r.accuracyIn||'?')} m</div>`:''}${r.latOut!=null?`<button class="mt-1 text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.latOut)},${Number(r.lngOut)})">Ra: ${esc(r.distanceOut||'?')} m</button><div class="text-xs text-slate-500">±${esc(r.accuracyOut||'?')} m</div>`:''}</div>`:'—'}</td><td class="whitespace-nowrap px-4 py-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold ${cls}">${esc(r.status)}</span>${r.warning?`<p class="mt-1 max-w-xs text-xs text-amber-700" title="${esc(r.warning)}">${esc(r.warning)}</p>`:''}</td></tr>`;}).join('');}
+function applyFiltersAndSearch(){const q=$('search-input').value.toLocaleLowerCase('vi').trim(),f=$('filter-status').value;const rows=masterData.filter(x=>{const hay=[x.id,x.name,x.dept,x.bophan,x.chucvu].join(' ').toLocaleLowerCase('vi');const matchText=hay.includes(q);const matchStatus=f==='ALL'||(f==='Cảnh báo'?!!x.warning:statusBase(x)===f);return matchText&&matchStatus;});$('table-count').textContent=rows.length+' dòng';if(!rows.length){$('table-body').innerHTML='<tr><td colspan="14" class="px-4 py-10 text-center text-slate-400">Không tìm thấy dữ liệu phù hợp</td></tr>';return;}$('table-body').innerHTML=rows.map(r=>{const status=statusBase(r),cls=status==='Vắng mặt'?'bg-rose-50 text-rose-700':status==='Đi trễ'?'bg-amber-50 text-amber-700':'bg-emerald-50 text-emerald-700';const photo=(id,url,label)=>(id||url)?`<button type="button" class="photo-link text-blue-600 underline" data-id="${esc(id||'')}" data-url="${esc(url||'')}" data-name="${esc(r.name+' - '+label)}">Xem ảnh</button>`:'<span class="text-slate-300">—</span>';return `<tr class="hover:bg-slate-50"><td class="whitespace-nowrap px-4 py-3 font-medium">${esc(r.id)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.name)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.dept)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.bophan)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.chucvu)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.date)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeIn)}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.timeOut)}</td><td class="px-4 py-3">${photo(r.photoInId,r.photoIn,'Ảnh vào')}</td><td class="px-4 py-3">${photo(r.photoOutId,r.photoOut,'Ảnh ra')}</td><td class="whitespace-nowrap px-4 py-3">${esc(r.hours)}</td><td class="whitespace-nowrap px-4 py-3">${(r.latIn!=null||r.latOut!=null)?`<div>${r.latIn!=null?`<button class="text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.latIn)},${Number(r.lngIn)})">Vào: ${esc(r.distanceIn||'?')} m</button><div class="text-xs text-slate-500">±${esc(r.accuracyIn||'?')} m</div>`:''}${r.latOut!=null?`<button class="mt-1 text-blue-600 underline" onclick="focusAttendancePoint(${Number(r.latOut)},${Number(r.lngOut)})">Ra: ${esc(r.distanceOut||'?')} m</button><div class="text-xs text-slate-500">±${esc(r.accuracyOut||'?')} m</div>`:''}</div>`:'—'}</td><td class="whitespace-nowrap px-4 py-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold ${cls}">${esc(r.status)}</span>${r.warning?`<p class="mt-1 max-w-xs text-xs text-amber-700" title="${esc(r.warning)}">${esc(r.warning)}</p>`:''}</td><td class="whitespace-nowrap px-4 py-3">${r.row?`<button type="button" class="cancel-link text-rose-600 underline" data-row="${r.row}">Hủy</button>`:'<span class="text-slate-300">—</span>'}</td></tr>`;}).join('');}
 $('table-body').addEventListener('click',e=>{const b=e.target.closest('.photo-link');if(b)openImageModal(b.dataset.id,b.dataset.url,b.dataset.name);});
 function openImageModal(fileId,fallbackUrl,name){
  $('modal-title').textContent=name;$('modal-img').src='';$('image-modal').classList.remove('hidden');$('image-modal').classList.add('flex');
@@ -226,6 +241,32 @@ function ddAutoRefresh(){
 }
 setInterval(ddAutoRefresh, AUTO_REFRESH_MS);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)ddAutoRefresh();});
+</script>
+<script>
+/* Admin hủy điểm danh */
+let cancelTarget=null;
+function openCancel(row){
+  const r=masterData.find(x=>x.row===row);if(!r)return;
+  cancelTarget=r;const hasOut=!!r.timeOut&&r.timeOut!=='--:--';
+  $('cancel-info').textContent=r.name+' ('+r.id+') · '+r.date+' · vào '+r.timeIn+(hasOut?' · ra '+r.timeOut:' · chưa ra ca');
+  $('cancel-out-wrap').classList.toggle('hidden',!hasOut);
+  document.querySelector('input[name=cancel-kind][value='+(hasOut?'out':'all')+']').checked=true;
+  $('cancel-reason').value='';$('cancel-error').classList.add('hidden');$('cancel-submit').disabled=false;
+  const m=$('cancel-modal');m.classList.remove('hidden');m.classList.add('flex');$('cancel-reason').focus();
+}
+function closeCancel(){const m=$('cancel-modal');m.classList.add('hidden');m.classList.remove('flex');cancelTarget=null;}
+function submitCancel(){
+  if(!cancelTarget)return;
+  const reason=$('cancel-reason').value.trim(),err=$('cancel-error');
+  if(reason.length<3){err.textContent='Hãy nhập lý do hủy.';err.classList.remove('hidden');return;}
+  const kind=document.querySelector('input[name=cancel-kind]:checked').value,t=cancelTarget,btn=$('cancel-submit');
+  btn.disabled=true;err.classList.add('hidden');
+  AttendanceAPI.post('cancelAttendance',{token:adminToken,row:t.row,code:t.id,date:t.date,timeIn:t.timeIn,kind:kind,reason:reason}).then(res=>{
+    if(res&&res.success){closeCancel();const w=setInterval(()=>{if(!dashBusy){clearInterval(w);loadDashboardData(true);}},300);}
+    else{btn.disabled=false;err.textContent=(res&&res.message)||'Không hủy được.';err.classList.remove('hidden');}
+  }).catch(e=>{btn.disabled=false;err.textContent='Lỗi kết nối: '+e.message;err.classList.remove('hidden');});
+}
+$('table-body').addEventListener('click',e=>{const b=e.target.closest('.cancel-link');if(b)openCancel(Number(b.dataset.row));});
 </script>
 </body>
 </html>
