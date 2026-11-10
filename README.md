@@ -79,3 +79,7 @@ Khi cập nhật `Code.gs`, chọn **Triển khai → Quản lý bản triển k
 
 ## Đổi logo
 Cả `index.html`, `admin.html` và `qr.html` dùng chung file `logo.png` cùng thư mục. Muốn đổi logo, chỉ cần upload file ảnh mới (PNG nền trong suốt, tỷ lệ ngang) đặt tên `logo.png` đè lên file cũ, rồi tải lại trang bằng Ctrl+F5.
+
+
+## Đồng bộ SQL Server (tùy chọn)
+Xem `sql-sync/HUONG_DAN.md` (script tạo bảng, dịch vụ nhận dữ liệu .NET và cách bật `setupSqlSync()`). Mặc định tắt; khi tắt, hệ thống không gọi ra ngoài và không tạo thêm sheet.

@@ -423,9 +423,9 @@ var ss = getSS_();
 var sh = ss.getSheetByName(SHEET_STAFF);
 if (!sh) {
 sh = ss.insertSheet(SHEET_STAFF);
-sh.appendRow(['Mã NV', 'Họ tên', 'Phòng ban', 'Bộ phận', 'Chức vụ']);
+sh.appendRow(['Mã NV', 'Họ tên', 'Phòng ban', 'Bộ phận', 'Chức vụ', 'Mã AC']);
 sh.setFrozenRows(1);
-sh.getRange(1, 1, 1, 5).setFontWeight('bold');
+sh.getRange(1, 1, 1, 6).setFontWeight('bold');
 }
 return sh;
 }
@@ -467,8 +467,22 @@ code: find(['manv', 'manhanvien', 'ma'], 0),
 name: find(['hoten', 'hovaten', 'ten'], 1),
 phongban: find(['phongban'], 2),
 bophan: find(['bophan'], 3),
-chucvu: find(['chucvu'], 4)
+chucvu: find(['chucvu'], 4),
+ac: find(['maac', 'ac', 'acno', 'acid', 'macc', 'machamcong'], -1)   // Mã AC trên máy chấm công / TimeGold (cột tùy chọn)
 };
+}
+// Mã AC (mã trên máy chấm công / TimeGold) của một nhân viên; rỗng nếu sheet NhanVien chưa có cột "Mã AC".
+function staffAcCode_(code) {
+var sh = getStaffSheet_(), last = sh.getLastRow();
+if (last < 2) return '';
+var cols = staffColumns_(sh);
+if (cols.ac < 0) return '';
+var rows = sh.getRange(2, 1, last - 1, Math.max(sh.getLastColumn(), cols.ac + 1)).getValues();
+var key = String(code || '').trim().toUpperCase();
+for (var i = 0; i < rows.length; i++) {
+if (String(rows[i][cols.code]).trim().toUpperCase() === key) return String(rows[i][cols.ac]).trim();
+}
+return '';
 }
 // Ảnh thu nhỏ cho bảng admin (gửi theo lô, cache 6 giờ)
 function getThumbs(token, ids) {
@@ -541,6 +555,12 @@ sh.getRange(row, C.DEV_OUT).clearContent();
 sh.getRange(row, C.LAT_OUT, 1, 4).clearContent();
 sh.getRange(row, C.LAT, 1, 4).setValues([[vals[C.LAT_IN - 1], vals[C.LNG_IN - 1], vals[C.ACC_IN - 1], vals[C.DIST_IN - 1]]]);
 }
+try {
+var evs = [];
+if (kind === 'all' && rin) evs.push({ eventType: 'IN', occurredAt: sqlIso_(rin) });
+if (isDate_(vals[C.OUT - 1])) evs.push({ eventType: 'OUT', occurredAt: sqlIso_(vals[C.OUT - 1]) });
+sqlEnqueue_(kind === 'out' ? 'CANCEL_OUT' : 'CANCEL_ALL', { employeeCode: code, workDate: rdate, cancelledEvents: evs, reason: reason, cancelledBy: ADMIN_CONFIG.username, cancelledAt: sqlIso_(new Date()) });
+} catch (e) { console.error('cancel->sql: ' + e); }
 return { success: true, message: kind === 'out' ? 'Đã hủy lượt ra. Nhân viên có thể ra ca lại.' : 'Đã hủy cả ca. Nhân viên có thể vào ca lại.' };
 } finally {
 lock.releaseLock();
@@ -664,7 +684,8 @@ if (n > 0) warns.push('Thiết bị này đã điểm danh cho ' + n + ' mã kh�
 }
 var fileName = fmt_(now, 'yyyyMMdd_HHmmss') + '' + code + '' + (isOut ? 'ra' : 'vao') + '.jpg';
 var blob = Utilities.newBlob(Utilities.base64Decode(m[1]), 'image/jpeg', fileName);
-var url = getFolder_().createFile(blob).getUrl();
+var pfile = getFolder_().createFile(blob);
+var url = pfile.getUrl();
 var link = '=HYPERLINK("' + url + '","Xem ảnh")';
 if (!isOut) {
 if (open && openHours >= MAX_SHIFT_HOURS) addWarn_(sh, prevRow, 'Quên điểm danh ra ca');
@@ -676,6 +697,7 @@ sh.getRange(row, C.OUT).setNumberFormat('dd/MM/yyyy HH:mm:ss');
 sh.getRange(row, C.HOURS).setFormula(hoursFormula_(row)).setNumberFormat('0.00');
 sh.getRange(row, C.PHOTO_IN).setFormula(link);
 if (warns.length) sh.getRange(row, 1, 1, HEADERS.length).setBackground('#fde8dc');
+sqlEnqueueCheckin_('IN', now, fmt_(now, 'yyyy-MM-dd'), code, name, device, pfile.getId(), url, lat, lng, accuracy, distance, warns);
 return { ok: true, name: name, message: 'Đã vào ca lúc ' + nowTxt + ' ngày ' + today + '.' };
 }
 if (open && openHours <= MAX_SHIFT_HOURS) {
@@ -686,6 +708,7 @@ sh.getRange(prevRow,C.LAT,1,4).setValues([[lat,lng,accuracy,distance]]);
 sh.getRange(prevRow,C.LAT_OUT,1,4).setValues([[lat,lng,accuracy,distance]]);
 sh.getRange(prevRow, C.HOURS).setFormula(hoursFormula_(prevRow)).setNumberFormat('0.00');
 warns.forEach(function (w) { addWarn_(sh, prevRow, w); });
+sqlEnqueueCheckin_('OUT', now, fmt_(prevIn, 'yyyy-MM-dd'), code, name, device, pfile.getId(), url, lat, lng, accuracy, distance, warns);
 var worked = Math.max(0, openHours - BREAK_MINUTES / 60);
 var hh = Math.floor(worked), mm = Math.round((worked - hh) * 60);
 if (mm === 60) { hh += 1; mm = 0; }
@@ -701,6 +724,7 @@ sh.getRange(r2, C.OUT).setNumberFormat('dd/MM/yyyy HH:mm:ss');
 sh.getRange(r2, C.HOURS).setFormula(hoursFormula_(r2)).setNumberFormat('0.00');
 sh.getRange(r2, C.PHOTO_OUT).setFormula(link);
 sh.getRange(r2, 1, 1, HEADERS.length).setBackground('#fde8dc');
+sqlEnqueueCheckin_('OUT', now, fmt_(now, 'yyyy-MM-dd'), code, name, device, pfile.getId(), url, lat, lng, accuracy, distance, warns);
 return { ok: true, name: name, message: 'Đã ghi giờ ra lúc ' + nowTxt + '. Hệ thống không thấy giờ vào của bạn nên quản lý sẽ kiểm tra.' };
 } finally {
 lock.releaseLock();
@@ -722,4 +746,153 @@ function setAdminCredentials() {
     ADMIN_PASSWORD: password
   }, true);
   return 'Đã cập nhật thông tin đăng nhập Admin trong Script Properties.';
+}
+
+// =====================================================================
+// ĐỒNG BỘ SQL SERVER QUA API NỘI BỘ (tùy chọn, mặc định TẮT)
+// Google Sheet vẫn là nguồn gốc. Mỗi lượt vào/ra/hủy được xếp vào sheet HangDoiSQL,
+// rồi trigger mỗi phút gửi từng lô tới API của công ty (có ký HMAC, tự thử lại khi lỗi).
+// Bật bằng setupSqlSync(); tắt bằng disableSqlSync().
+// =====================================================================
+var SHEET_SQLQ = 'HangDoiSQL';
+var SQLQ_HEADERS = ['EventId', 'Thời điểm', 'Loại', 'Dữ liệu (JSON)', 'Trạng thái', 'Số lần thử', 'Lỗi gần nhất', 'Gửi lúc'];
+var SQL_BATCH = 20;          // số sự kiện mỗi lần gọi API
+var SQL_MAX_BATCHES = 5;     // số lô tối đa mỗi lần chạy trigger
+var SQL_MAX_ATTEMPTS = 20;   // quá số lần này thì đánh dấu FAILED (xem lỗi rồi chạy retrySqlFailed)
+var SQL_KEEP_DAYS = 3;       // dọn các dòng SENT cũ hơn số ngày này
+
+function sqlCfg_() {
+var p = PropertiesService.getScriptProperties();
+var url = p.getProperty('SQL_API_URL'), secret = p.getProperty('SQL_API_SECRET');
+if (!url || !secret || p.getProperty('SQL_SYNC') === 'off') return null;
+return { url: url, secret: secret };
+}
+function sqlIso_(d) { return fmt_(d, "yyyy-MM-dd'T'HH:mm:ssXXX"); }
+function getSqlQueueSheet_() {
+var ss = getSS_(), sh = ss.getSheetByName(SHEET_SQLQ);
+if (!sh) {
+sh = ss.insertSheet(SHEET_SQLQ);
+sh.appendRow(SQLQ_HEADERS);
+sh.setFrozenRows(1);
+sh.getRange(1, 1, 1, SQLQ_HEADERS.length).setFontWeight('bold');
+sh.setColumnWidth(4, 420);
+}
+return sh;
+}
+// Xếp một sự kiện vào hàng đợi. Không bao giờ làm hỏng luồng điểm danh.
+function sqlEnqueue_(type, payload) {
+try {
+if (!sqlCfg_()) return;
+var id = Utilities.getUuid();
+payload.eventId = id;
+payload.eventType = type;
+getSqlQueueSheet_().appendRow([id, new Date(), type, JSON.stringify(payload), 'PENDING', 0, '', '']);
+} catch (err) { console.error('sqlEnqueue_: ' + err); }
+}
+function sqlEnqueueCheckin_(type, now, workDate, code, name, device, fileId, url, lat, lng, accuracy, distance, warns) {
+if (!sqlCfg_()) return;
+var ac = '';
+try { ac = staffAcCode_(code); } catch (e) { console.error('staffAcCode_: ' + e); }
+sqlEnqueue_(type, {
+occurredAt: sqlIso_(now), workDate: workDate, employeeCode: code, acCode: ac, employeeName: name,
+deviceId: device, photoFileId: fileId, photoUrl: url,
+latitude: lat, longitude: lng, gpsAccuracyM: accuracy, distanceM: distance,
+warning: (warns || []).join('; ')
+});
+}
+function sqlSign_(secret, ts, body) {
+var bytes = Utilities.computeHmacSha256Signature(ts + '.' + body, secret);
+return bytes.map(function (b) { return ('0' + (b < 0 ? b + 256 : b).toString(16)).slice(-2); }).join('');
+}
+function sqlPost_(cfg, body) {
+var ts = String(Math.floor(Date.now() / 1000));
+return UrlFetchApp.fetch(cfg.url, {
+method: 'post',
+contentType: 'application/json; charset=utf-8',
+payload: body,
+headers: { 'X-Timestamp': ts, 'X-Signature': sqlSign_(cfg.secret, ts, body) },
+muteHttpExceptions: true
+});
+}
+// Trigger chạy mỗi phút: gửi các sự kiện PENDING theo lô, đánh dấu SENT / thử lại / FAILED.
+function syncSqlQueue() {
+var cfg = sqlCfg_();
+if (!cfg) return;
+var cache = CacheService.getScriptCache();
+if (cache.get('sqlsync:running')) return;
+cache.put('sqlsync:running', '1', 300);
+try {
+var sh = getSqlQueueSheet_(), last = sh.getLastRow();
+if (last < 2) return;
+var rows = sh.getRange(2, 1, last - 1, SQLQ_HEADERS.length).getValues();
+var next = 0;
+for (var b = 0; b < SQL_MAX_BATCHES; b++) {
+var idx = [];
+while (next < rows.length && idx.length < SQL_BATCH) { if (rows[next][4] === 'PENDING') idx.push(next); next++; }
+if (!idx.length) break;
+var body = '{"events":[' + idx.map(function (i) { return rows[i][3]; }).join(',') + ']}';
+var okMap = null, errAll = '';
+try {
+var resp = sqlPost_(cfg, body), http = resp.getResponseCode();
+if (http === 200) {
+okMap = {};
+(JSON.parse(resp.getContentText()).results || []).forEach(function (r) { okMap[r.eventId] = r; });
+} else {
+errAll = 'HTTP ' + http + ': ' + resp.getContentText().slice(0, 150);
+}
+} catch (err) { errAll = String(err).slice(0, 200); }
+var nowD = new Date();
+idx.forEach(function (i) {
+var id = rows[i][0], attempts = Number(rows[i][5]) || 0, r = okMap && okMap[id];
+var status, error = '', sent = '';
+if (r && r.ok) { status = 'SENT'; sent = nowD; }
+else {
+attempts++;
+error = r ? String(r.error || 'Lỗi không rõ').slice(0, 200) : (errAll || 'Không có phản hồi cho sự kiện này');
+status = attempts >= SQL_MAX_ATTEMPTS ? 'FAILED' : 'PENDING';
+}
+sh.getRange(i + 2, 5, 1, 4).setValues([[status, attempts, error, sent]]);
+});
+if (errAll) break;   // API lỗi/mất kết nối: dừng, phút sau thử lại
+}
+// Dọn các dòng đã gửi cũ
+var cutoff = Date.now() - SQL_KEEP_DAYS * 86400000, removed = 0;
+for (var j = rows.length - 1; j >= 0 && removed < 100; j--) {
+if (rows[j][4] === 'SENT' && isDate_(rows[j][7]) && rows[j][7].getTime() < cutoff) { sh.deleteRow(j + 2); removed++; }
+}
+} finally {
+cache.remove('sqlsync:running');
+}
+}
+// Chạy MỘT LẦN: sửa url và secret bên dưới, chạy hàm này, cấp quyền, rồi xóa secret khỏi mã nguồn.
+function setupSqlSync() {
+var url = 'https://api.congty.vn/api/attendance/events';   // URL API nội bộ nhận dữ liệu (bắt buộc https)
+var secret = 'THAY_BANG_CHUOI_BI_MAT_DAI_TU_24_KY_TU';       // trùng với Attendance:SharedSecret phía công ty
+if (!/^https:\/\//.test(url) || secret.length < 24 || secret.indexOf('THAY_BANG') === 0)
+throw new Error('Hãy sửa url (https) và secret (từ 24 ký tự) trong setupSqlSync() trước khi chạy.');
+PropertiesService.getScriptProperties().setProperties({ SQL_API_URL: url, SQL_API_SECRET: secret, SQL_SYNC: 'on' }, false);
+getSqlQueueSheet_();
+ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'syncSqlQueue') ScriptApp.deleteTrigger(t); });
+ScriptApp.newTrigger('syncSqlQueue').timeBased().everyMinutes(1).create();
+return 'Đã bật đồng bộ SQL. Chạy sqlPing() để kiểm tra kết nối.';
+}
+function disableSqlSync() {
+ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'syncSqlQueue') ScriptApp.deleteTrigger(t); });
+PropertiesService.getScriptProperties().setProperty('SQL_SYNC', 'off');
+return 'Đã tắt đồng bộ SQL. Dữ liệu trong HangDoiSQL được giữ nguyên.';
+}
+// Kiểm tra URL + chữ ký bằng một lô rỗng: kỳ vọng HTTP 200.
+function sqlPing() {
+var cfg = sqlCfg_();
+if (!cfg) throw new Error('Chưa bật đồng bộ SQL (chạy setupSqlSync trước).');
+var resp = sqlPost_(cfg, '{"events":[]}');
+return 'HTTP ' + resp.getResponseCode() + ' ' + resp.getContentText().slice(0, 200);
+}
+// Đưa các sự kiện FAILED về PENDING để gửi lại (sau khi đã sửa lỗi phía công ty).
+function retrySqlFailed() {
+var sh = getSqlQueueSheet_(), last = sh.getLastRow(), n = 0;
+if (last < 2) return 0;
+var st = sh.getRange(2, 5, last - 1, 2).getValues();
+st.forEach(function (r, i) { if (r[0] === 'FAILED') { sh.getRange(i + 2, 5, 1, 2).setValues([['PENDING', 0]]); n++; } });
+return 'Đã đặt lại ' + n + ' sự kiện.';
 }
